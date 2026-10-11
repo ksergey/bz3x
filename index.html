@@ -94,6 +94,9 @@
   <div class="sub">Открывает адаптер прямо из браузера и шлёт последовательность
     (Web Serial для USB/RFCOMM, Web Bluetooth для BLE).
     <a href="card.html" style="color:var(--link)">шпаргалка с командами и генератором ключа →</a></div>
+  <div class="hint">Шина IHU — <b>MS‑CAN 125 кбит/с</b> (<code>STP53</code>, пины OBD 3/11).
+    Если адаптер не умеет MS‑CAN (<code>STP53</code> → <code>?</code>) — авто‑откат на
+    <b>HS‑CAN 500k</b> (<code>ATTP6</code>).</div>
 
   <section class="card">
     <div class="row2">
@@ -178,13 +181,13 @@ var ERROR_MARKERS=["UNABLE TO CONNECT","BUS INIT","CAN ERROR","BUS ERROR","NO DA
   "BUFFER FULL","STOPPED","ERROR","FB ERROR","DATA ERROR"];
 var ERROR_NORM=ERROR_MARKERS.map(function(m){return m.replace(/\s+/g,"");});
 var ID_MARKERS=["ELM327","ELM","STN","OBDLINK","ELS27"];
-var INIT_AT=["ATE0","ATL0","ATH1","ATS0","ATR1","ATM0","ATPC","ATTP6","ATAL","ATV0",
-  "ATSH72B","ATCRA7AB","ATFCSH72B","ATFCSD300014","ATFCSM1","ATCAF1","ATCFC1",
-  "ATAT0","ATSTFF"];
+var INIT_PRE=["ATE0","ATL0","ATH1","ATS0","ATR1","ATM0"];
+var INIT_POST=["ATAL","ATV0","ATSH72B","ATCRA7AB","ATFCSH72B","ATFCSD300014",
+  "ATFCSM1","ATCAF1","ATCFC1","ATAT0","ATSTFF"];
 var REQ_VERSION="8789CVN020  S.242";
 var AUTOBAUD=[38400,115200,9600,57600];
 
-var T={kind:null,name:"",connected:false,buf:"",lastData:0,debug:false,
+var T={kind:null,name:"",connected:false,buf:"",lastData:0,debug:false,bus:null,
   port:null,writer:null,reader:null,bleDev:null,bleWrite:null,bleNotify:null};
 
 function norm(s){return s.replace(/\s+/g,"").toUpperCase();}
@@ -381,6 +384,38 @@ async function atIdentity(){
   return txt;
 }
 
+/* Шина bZ3X: IHU сидит на MS-CAN — 125 кбит/с, пины OBD 3/11 → STN‑пресет STP53.
+   Адаптер без MS-CAN (STP53 → '?') откатывается на HS-CAN 500k (ATTP6, пины 6/14). */
+function isBusErr(e){
+  var m=norm((e&&e.message)||"");
+  return /CANERROR|BUSERROR|BUSINIT|NODATA|UNABLETOCONNECT/.test(m)||m.indexOf("НЕТОТВЕТА")>=0;
+}
+async function setupBus(ms){
+  if(ms){
+    try{
+      await at("STPC");
+      await at("STP53");
+      T.bus="MS-CAN";
+      logLine("--","шина: MS-CAN 125k — STP53 (пины 3/11)","ok");
+    }catch(e){
+      logLine("!!","STP53 недоступен: "+e.message+" — адаптер не умеет MS-CAN (пины 3/11)","err");
+      await at("ATPC");
+      await at("ATTP6");
+      T.bus="HS-CAN";
+      logLine("--","шина: HS-CAN 500k — ATTP6 (пины 6/14)","note");
+    }
+  }else{
+    await at("ATPC");
+    await at("ATTP6");
+    T.bus="HS-CAN";
+    logLine("--","шина: HS-CAN 500k — ATTP6 (пины 6/14)","note");
+  }
+  for(var i=0;i<INIT_POST.length;i++)await at(INIT_POST[i]);
+}
+async function closeProto(){
+  await at(T.bus==="MS-CAN"?"STPC":"ATPC");
+}
+
 function decodeUds(text){
   var out="",firstLen=null;
   var lines=text.replace(/\r/g,"\n").split("\n");
@@ -405,7 +440,7 @@ function decodeUds(text){
 async function uds(payload,expect,opts){
   opts=opts||{};
   var sendAtpc=(opts.atpc!==undefined)?opts.atpc:(payload==="1003"||payload.indexOf("27")===0);
-  if(sendAtpc){await at("ATPC");await sleep(400);}
+  if(sendAtpc){await closeProto();await sleep(400);}
   await sleep(250);
   var txt=await command(payload);
   var data=decodeUds(txt);
@@ -432,11 +467,21 @@ async function run(){
       logLine("--","ATZ (сброс)","note");
       await command("ATZ",5000);await sleep(1000);
     }
-    logLine("--","Инициализация (19 AT)","note");
-    for(var i=0;i<INIT_AT.length;i++)await at(INIT_AT[i]);
+    logLine("--","Инициализация (AT + выбор шины)","note");
+    for(var i=0;i<INIT_PRE.length;i++)await at(INIT_PRE[i]);
+    await setupBus(true);
     logLine("--","ATI","note");await atIdentity();
     logLine("--","22F190 — VIN","note");
-    var vinP=await uds("22F190","62F190");
+    var vinP;
+    try{
+      vinP=await uds("22F190","62F190");
+    }catch(e){
+      if(T.bus==="MS-CAN"&&isBusErr(e)){
+        logLine("!!","на MS-CAN ответа нет ("+e.message+") — пробую HS-CAN 500k","err");
+        await setupBus(false);
+        vinP=await uds("22F190","62F190");
+      }else throw e;
+    }
     var vin=asciiFromHex(vinP,6);
     logLine("--","VIN: "+vin,"ok");
     logLine("--","22F189 — версия","note");

@@ -110,7 +110,9 @@
   <p class="note">
     СТОП при <b>?</b> / ERROR / NO DATA / CAN ERROR / BUS ERROR / UNABLE TO CONNECT / <b>7F&nbsp;xx&nbsp;xx</b>.<br>
     Версия должна быть <b>8789CVN020&nbsp;&nbsp;S.242</b>, иначе ключ не отправлять.<br>
-    Шина — <b>HS-CAN 500k</b> (<code>STP33</code>), не MS-CAN.
+    Шина IHU — <b>MS-CAN 125k</b> (<code>STP53</code>, пины OBD <b>3/11</b>).<br>
+    Если на <code>STP53</code> вернулось <b>?</b> — этот адаптер/прошивка не умеет MS-CAN
+    (пины 3/11); запасной вариант — <code>ATTP6</code>/<code>STP33</code> (HS-CAN 500k, пины 6/14).
   </p>
 </div>
 
@@ -130,11 +132,12 @@ function seed2key(seedHex){var s=seedHex.replace(/[^0-9a-fA-F]/g,"").toUpperCase
 /* ---- UI ---- */
 var DATA=[
  {title:"Проверка шины", cmds:[
-   ["ATZ","ELM327 v…"],["ATI","ELM327 v2.2"],["STP33","OK"],["STPR","33"],
-   ["STPRS","ISO 15765, 11-bit, 500kbps, DLC=8"],["STPBRR","500000"]]},
+   ["ATZ","ELM327 v…"],["ATI","ELM327 v2.2"],["STP53","OK — MS-CAN 125k"],
+   ["STPR","53"],["STPRS","ISO 15765, 11-bit, 125kbps, DLC=8"],["STPBRR","125000"],
+   ["STP33","OK (запасной HS-CAN 500k — только если MS-CAN не нужен)"]]},
  {title:"Инициализация", cmds:[
    ["ATE0","OK"],["ATL0","OK"],["ATH1","OK"],["ATS0","OK"],["ATR1","OK"],["ATM0","OK"],
-   ["STPC","OK"],["STP33","OK"],["ATAL","OK"],["ATV0","OK"],
+   ["STPC","OK"],["STP53","OK"],["ATAL","OK"],["ATV0","OK"],
    ["ATSH 72B","OK"],["ATCRA 7AB","OK"],["ATFCSH 72B","OK"],["ATFCSD 30 00 14","OK"],
    ["ATFCSM 1","OK"],["ATCAF 1","OK"],["ATCFC 1","OK"],["ATAT 0","OK"],["STPTO 1020","OK"]]},
  {title:"Обмен", cmds:[
