@@ -1,19 +1,41 @@
 # bZ3X · команды и ключ (GitHub Pages)
 
-Одностраничный справочник: команды для ELM327 / vLinker MC+ и офлайн‑генератор
-ключа Seed→Key (AES‑128 из `bz3x-menu.exe`). Всё считается в браузере, без сети.
+Две страницы:
+
+- **`index.html`** — справочник: команды для ELM327 / vLinker MC+ и офлайн‑генератор
+  ключа Seed→Key (AES‑128 из `bz3x-menu.exe`). Всё считается в браузере, без сети.
+- **`app.html`** — **веб‑терминал**: сам открывает адаптер прямо из браузера
+  (Web Serial для USB/RFCOMM и Web Bluetooth для BLE), шлёт всю последовательность
+  с проверками на каждом шаге, лог TX/RX, авто‑подстановка seed→key и отправка
+  `2702<KEY>`. Останавливается при любой ошибке.
+
+## Веб‑терминал (`app.html`)
+
+- **Web Serial** — Chrome/Edge на компьютере (USB‑адаптеры) и **Chrome for Android
+  117+** (Bluetooth RFCOMM/SPP, т.е. vLinker MC+ по классическому BT). Нужен HTTPS
+  или `localhost`; на Android — заранее спарить адаптер.
+- **Web Bluetooth** — BLE‑режим адаптера. UUID сервиса у разных моделей свой; если
+  авто‑поиск не находит, есть поле для ручного UUID и кнопка «Показать сервисы
+  устройства».
+- Авто‑baud (38400/115200/9600/57600), сырой RX в режиме «отладка», ручная отправка
+  отдельных команд, галочка «понимаю риск» перед запуском последовательности.
 
 ## Публикация на GitHub Pages
 
-1. Создать репозиторий и залить файлы:
+1. Инициализировать репозиторий и залить файлы:
    ```bash
    cd bz3x-pages
    git init -b main
-   git add index.html README.md
-   git commit -m "bZ3X commands + key generator"
+   git add -A
+   git commit -m "bZ3X commands + key generator + web terminal"
    gh repo create bz3x-pages --public --source=. --push
    ```
    (без `gh`: создать репозиторий на github.com и `git remote add origin … && git push -u origin main`)
+
+   Обновление уже опубликованной версии:
+   ```bash
+   git add -A && git commit -m "обновление" && git push
+   ```
 
 2. Включить Pages:
    - **Settings → Pages → Build and deployment**
@@ -28,5 +50,8 @@
 
 ## Оффлайн
 
-Страница самодостаточна: скачай `index.html` и открой в браузере телефона
-(`file:///sdcard/Download/index.html`). Буфер обмена и кнопки работают и без сети.
+Обе страницы самодостаточны: скачай `index.html` и `app.html` в одну папку и открой
+в браузере телефона. Генератор ключа, буфер обмена и кнопки работают и без сети.
+Веб‑терминал (`app.html`) требует разрешения на доступ к устройству и работает
+в Chrome/Edge; Web Serial/Web Bluetooth доступны только в безопасном контексте
+(HTTPS или `localhost`), поэтому «живое» подключение удобнее через GitHub Pages.
