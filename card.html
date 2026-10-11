@@ -3,70 +3,96 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <title>bZ3X · команды и ключ</title>
 <style>
   *{box-sizing:border-box}
-  body{margin:0;background:#0f1215;color:#e7e9ec;
+  :root{
+    --bg:#0f1215; --fg:#e7e9ec; --card:#141a20; --line:#232b33;
+    --btn-bg:#1a222a; --btn-line:#39424c; --btn-fg:#e7e9ec; --btn-hover:#212b34;
+    --in-bg:#0b0e11; --in-fg:#ffffff;
+    --ok-bg:#15301f; --ok-line:#2e7d4f; --ok-fg:#bff5d4; --green:#7ef0a8;
+    --key-bg:#12301f; --key-line:#2e7d4f; --key-fg:#7ef0a8;
+    --bad-bg:#2a1414; --bad-line:#7d2e2e; --bad-fg:#f08a7e;
+    --cmd:#eaf0f5; --hot:#ffd479; --link:#7fb4f0;
+  }
+  html[data-theme="light"]{
+    --bg:#f4f6fa; --fg:#1c2430; --card:#ffffff; --line:#dde4ec;
+    --btn-bg:#eef2f7; --btn-line:#c7d0db; --btn-fg:#1c2430; --btn-hover:#e3e9f1;
+    --in-bg:#ffffff; --in-fg:#0b0e11;
+    --ok-bg:#e7f7ee; --ok-line:#2e9d5f; --ok-fg:#14683c; --green:#0f7a3d;
+    --key-bg:#e7f7ee; --key-line:#2e9d5f; --key-fg:#0f7a3d;
+    --bad-bg:#fdecea; --bad-line:#c0392b; --bad-fg:#c0392b;
+    --cmd:#1c2430; --hot:#a4711a; --link:#1565c0;
+  }
+  html{color-scheme:dark}
+  html[data-theme="light"]{color-scheme:light}
+  body{margin:0;background:var(--bg);color:var(--fg);
        font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   .wrap{max-width:760px;margin:0 auto;padding:16px 14px 48px}
   h1{font-size:1.15rem;margin:.2em 0 .1em;letter-spacing:.2px}
-  .sub{opacity:.6;font-size:.85rem;margin-bottom:16px}
+  .sub{opacity:.62;font-size:.85rem;margin-bottom:16px}
+  .theme{position:fixed;top:12px;right:12px;z-index:50;width:40px;height:40px;
+       border:1px solid var(--btn-line);background:var(--btn-bg);color:var(--fg);
+       border-radius:999px;font-size:18px;line-height:1;cursor:pointer;
+       display:flex;align-items:center;justify-content:center}
+  .theme:hover{background:var(--btn-hover)}
   h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;opacity:.6;
      margin:24px 0 8px;font-weight:600}
-  section{border:1px solid #232b33;border-radius:12px;overflow:hidden;background:#141a20}
+  section{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
   ul{list-style:none;margin:0;padding:0}
   .row{display:flex;gap:8px;align-items:baseline;padding:9px 11px;
-       border-bottom:1px solid #1d242b}
+       border-bottom:1px solid var(--line)}
   .row:last-child{border-bottom:0}
-  .row:hover{background:#171f27}
+  .row:hover{background:var(--btn-hover)}
   .row input[type=checkbox]{margin:0;width:16px;height:16px;flex:0 0 auto;
        accent-color:#3fa96a;transform:translateY(2px);cursor:pointer}
   code.cmd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-       font-weight:600;cursor:pointer;white-space:nowrap;color:#eaf0f5}
-  code.cmd:hover{color:#7ef0a8}
-  .row.hot code.cmd{color:#ffd479}
+       font-weight:600;cursor:pointer;white-space:nowrap;color:var(--cmd)}
+  code.cmd:hover{color:var(--green)}
+  .row.hot code.cmd{color:var(--hot)}
   .exp{margin-left:auto;opacity:.5;font-size:.78rem;text-align:right;
        font-family:ui-monospace,Menlo,monospace}
   .row.done{opacity:.4}
   .row.done code.cmd{text-decoration:line-through}
-  .calc{background:#141a20;border:1px solid #232b33;border-radius:12px;padding:14px;margin-bottom:8px}
+  .calc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:8px}
   .calc label{display:block;font-size:.78rem;opacity:.7;margin-bottom:6px}
   .frow{display:flex;gap:8px}
   input#seed{flex:0 0 44%;min-width:0;padding:11px;font-size:1.05rem;
        font-family:ui-monospace,Menlo,monospace;letter-spacing:1px;text-transform:uppercase;
-       background:#0b0e11;color:#fff;border:1px solid #39424c;border-radius:9px}
+       background:var(--in-bg);color:var(--in-fg);border:1px solid var(--btn-line);border-radius:9px}
   .key{flex:1;display:flex;align-items:center;justify-content:center;
        font-family:ui-monospace,Menlo,monospace;font-size:1.3rem;letter-spacing:1.5px;
-       background:#12301f;border:1px solid #2e7d4f;border-radius:9px;color:#7ef0a8;
+       background:var(--key-bg);border:1px solid var(--key-line);border-radius:9px;color:var(--key-fg);
        min-height:44px}
-  .key.bad{background:#2a1414;border-color:#7d2e2e;color:#f08a7e}
+  .key.bad{background:var(--bad-bg);border-color:var(--bad-line);color:var(--bad-fg)}
   .send{margin-top:8px;font-family:ui-monospace,Menlo,monospace;
-       background:#0b0e11;border:1px dashed #39424c;border-radius:9px;padding:9px 10px;
+       background:var(--in-bg);border:1px dashed var(--btn-line);border-radius:9px;padding:9px 10px;
        word-break:break-all;cursor:pointer}
-  .send b{color:#7ef0a8}
+  .send b{color:var(--green)}
   .btn{margin-top:8px;width:100%;padding:10px;font-size:.92rem;border-radius:9px;
-       border:1px solid #39424c;background:#1a222a;color:#e7e9ec;cursor:pointer}
-  .btn:hover{background:#212b34}
+       border:1px solid var(--btn-line);background:var(--btn-bg);color:var(--btn-fg);cursor:pointer}
+  .btn:hover{background:var(--btn-hover)}
   .btn.small{margin:0}
   .grouphead{display:flex;justify-content:space-between;align-items:center;margin:24px 0 8px}
   .grouphead h2{margin:0}
   .note{font-size:.8rem;opacity:.6;margin-top:20px;line-height:1.5}
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
-       background:#2e7d4f;color:#fff;padding:9px 16px;border-radius:999px;font-size:.85rem;
+       background:var(--ok-line);color:#fff;padding:9px 16px;border-radius:999px;font-size:.85rem;
        opacity:0;pointer-events:none;transition:.18s}
   #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
-  a{color:#7fb4f0}
+  a{color:var(--link)}
 </style>
 </head>
 <body>
+<button id="theme" class="theme" title="Сменить тему (тёмная/светлая)" aria-label="Сменить тему">🌙</button>
 <div class="wrap">
   <h1>bZ3X · команды и ключ</h1>
   <div class="sub">vLinker MC+ / ELM327 · serial terminal · тап по команде = копировать</div>
 
   <p style="margin:0 0 16px"><a href="./"
-     style="display:inline-block;padding:9px 14px;border:1px solid #2e7d4f;border-radius:9px;
-            background:#15301f;color:#bff5d4;text-decoration:none;font-size:.9rem">
+     style="display:inline-block;padding:9px 14px;border:1px solid var(--ok-line);border-radius:9px;
+            background:var(--ok-bg);color:var(--ok-fg);text-decoration:none;font-size:.9rem">
      ▶ Веб‑терминал: подключить адаптер прямо из браузера →</a></p>
 
   <section class="calc">
@@ -182,6 +208,28 @@ function update(){
 seedEl.addEventListener("input",update);
 sendEl.addEventListener("click",function(){ if(currentKey) copy("2702"+currentKey); });
 update();
+
+/* ---------- тема ---------- */
+(function(){
+  try{
+    var root=document.documentElement;
+    if(!root||!root.setAttribute)return;
+    var btn=document.getElementById?document.getElementById("theme"):null;
+    function apply(t){
+      root.setAttribute("data-theme",t);
+      if(btn)btn.textContent=(t==="light"?"☀️":"🌙");
+    }
+    var saved=null;
+    try{saved=localStorage.getItem("bz3x-theme");}catch(e){}
+    var sys=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches)?"light":"dark";
+    apply(saved||sys);
+    if(btn)btn.addEventListener("click",function(){
+      var t=(root.getAttribute("data-theme")==="light")?"dark":"light";
+      apply(t);
+      try{localStorage.setItem("bz3x-theme",t);}catch(e){}
+    });
+  }catch(e){}
+})();
 </script>
 </body>
 </html>
