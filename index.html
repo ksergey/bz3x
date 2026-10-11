@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>bZ3X · команды и ключ</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0f1215;color:#e7e9ec;
+       font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:16px 14px 48px}
+  h1{font-size:1.15rem;margin:.2em 0 .1em;letter-spacing:.2px}
+  .sub{opacity:.6;font-size:.85rem;margin-bottom:16px}
+  h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;opacity:.6;
+     margin:24px 0 8px;font-weight:600}
+  section{border:1px solid #232b33;border-radius:12px;overflow:hidden;background:#141a20}
+  ul{list-style:none;margin:0;padding:0}
+  .row{display:flex;gap:8px;align-items:baseline;padding:9px 11px;
+       border-bottom:1px solid #1d242b}
+  .row:last-child{border-bottom:0}
+  .row:hover{background:#171f27}
+  .row input[type=checkbox]{margin:0;width:16px;height:16px;flex:0 0 auto;
+       accent-color:#3fa96a;transform:translateY(2px);cursor:pointer}
+  code.cmd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       font-weight:600;cursor:pointer;white-space:nowrap;color:#eaf0f5}
+  code.cmd:hover{color:#7ef0a8}
+  .row.hot code.cmd{color:#ffd479}
+  .exp{margin-left:auto;opacity:.5;font-size:.78rem;text-align:right;
+       font-family:ui-monospace,Menlo,monospace}
+  .row.done{opacity:.4}
+  .row.done code.cmd{text-decoration:line-through}
+  .calc{background:#141a20;border:1px solid #232b33;border-radius:12px;padding:14px;margin-bottom:8px}
+  .calc label{display:block;font-size:.78rem;opacity:.7;margin-bottom:6px}
+  .frow{display:flex;gap:8px}
+  input#seed{flex:0 0 44%;min-width:0;padding:11px;font-size:1.05rem;
+       font-family:ui-monospace,Menlo,monospace;letter-spacing:1px;text-transform:uppercase;
+       background:#0b0e11;color:#fff;border:1px solid #39424c;border-radius:9px}
+  .key{flex:1;display:flex;align-items:center;justify-content:center;
+       font-family:ui-monospace,Menlo,monospace;font-size:1.3rem;letter-spacing:1.5px;
+       background:#12301f;border:1px solid #2e7d4f;border-radius:9px;color:#7ef0a8;
+       min-height:44px}
+  .key.bad{background:#2a1414;border-color:#7d2e2e;color:#f08a7e}
+  .send{margin-top:8px;font-family:ui-monospace,Menlo,monospace;
+       background:#0b0e11;border:1px dashed #39424c;border-radius:9px;padding:9px 10px;
+       word-break:break-all;cursor:pointer}
+  .send b{color:#7ef0a8}
+  .btn{margin-top:8px;width:100%;padding:10px;font-size:.92rem;border-radius:9px;
+       border:1px solid #39424c;background:#1a222a;color:#e7e9ec;cursor:pointer}
+  .btn:hover{background:#212b34}
+  .btn.small{margin:0}
+  .grouphead{display:flex;justify-content:space-between;align-items:center;margin:24px 0 8px}
+  .grouphead h2{margin:0}
+  .note{font-size:.8rem;opacity:.6;margin-top:20px;line-height:1.5}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
+       background:#2e7d4f;color:#fff;padding:9px 16px;border-radius:999px;font-size:.85rem;
+       opacity:0;pointer-events:none;transition:.18s}
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  a{color:#7fb4f0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>bZ3X · команды и ключ</h1>
+  <div class="sub">vLinker MC+ / ELM327 · serial terminal · тап по команде = копировать</div>
+
+  <section class="calc">
+    <label>Seed из ответа на <b>2701</b> (4 байта, напр. 12345678)</label>
+    <div class="frow">
+      <input id="seed" inputmode="text" autocapitalize="characters" autocomplete="off"
+             spellcheck="false" placeholder="12345678" maxlength="16">
+      <div class="key" id="key">— — — —</div>
+    </div>
+    <div class="send" id="send" title="нажми, чтобы скопировать">→ отправить: <b>2702________</b></div>
+  </section>
+
+  <div id="groups"></div>
+
+  <p class="note">
+    СТОП при <b>?</b> / ERROR / NO DATA / CAN ERROR / BUS ERROR / UNABLE TO CONNECT / <b>7F&nbsp;xx&nbsp;xx</b>.<br>
+    Версия должна быть <b>8789CVN020&nbsp;&nbsp;S.242</b>, иначе ключ не отправлять.<br>
+    Шина — <b>HS-CAN 500k</b> (<code>STP33</code>), не MS-CAN.
+  </p>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ---- AES-128 encrypt-only (алгоритм из bz3x-menu.exe) ---- */
+var SBOX=[0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16];
+var RCON=[0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1B,0x36];
+function xtime(a){return ((a&0x80)?((a<<1)^0x1B):(a<<1))&0xFF;}
+function expandKey(key){var w=[],i,j;for(i=0;i<4;i++)w.push([key[i*4],key[i*4+1],key[i*4+2],key[i*4+3]]);for(i=4;i<44;i++){var t=w[i-1].slice();if(i%4===0){t=[t[1],t[2],t[3],t[0]];t=[SBOX[t[0]],SBOX[t[1]],SBOX[t[2]],SBOX[t[3]]];t[0]^=RCON[i/4-1];}var p=w[i-4],r=[];for(j=0;j<4;j++)r.push(p[j]^t[j]);w.push(r);}return w;}
+function encryptBlock(key,block){var w=expandKey(key),c,r,rnd,st=[];for(c=0;c<4;c++){var col=[];for(r=0;r<4;r++)col.push(block[r+4*c]^w[c][r]);st.push(col);}for(rnd=1;rnd<=10;rnd++){for(c=0;c<4;c++)for(r=0;r<4;r++)st[c][r]=SBOX[st[c][r]];var ns=[];for(c=0;c<4;c++){var nc=[];for(r=0;r<4;r++)nc.push(st[(c+r)%4][r]);ns.push(nc);}st=ns;if(rnd!==10){var mo=[];for(c=0;c<4;c++){var a0=st[c][0],a1=st[c][1],a2=st[c][2],a3=st[c][3];mo.push([xtime(a0)^xtime(a1)^a1^a2^a3,a0^xtime(a1)^xtime(a2)^a2^a3,a0^a1^xtime(a2)^xtime(a3)^a3,xtime(a0)^a0^a1^a2^xtime(a3)]);}st=mo;}for(c=0;c<4;c++)for(r=0;r<4;r++)st[c][r]^=w[rnd*4+c][r];}var out=[];for(c=0;c<4;c++)for(r=0;r<4;r++)out.push(st[c][r]);return out;}
+var AES_KEY=[0xc3,0xd5,0xcf,0x2c,0xa7,0x61,0xe6,0x41,0xa7,0x31,0x28,0x35,0xb2,0x4b,0x57,0x5e];
+function seed2key(seedHex){var s=seedHex.replace(/[^0-9a-fA-F]/g,"").toUpperCase();if(s.length!==8)throw new Error("нужно 8 hex-символов (4 байта)");var seed=[];for(var i=0;i<4;i++)seed.push(parseInt(s.substr(i*2,2),16));var ct=encryptBlock(AES_KEY,seed.concat([1,1,1,1,1,1,1,1,1,1,1,1]));var k=[(ct[12]^ct[3])^(ct[15]^ct[0]),(ct[13]^ct[2])^(ct[14]^ct[1]),ct[14]^ct[1],ct[15]^ct[0]];return k.map(function(b){return ("0"+b.toString(16).toUpperCase()).slice(-2);}).join("");}
+
+/* ---- UI ---- */
+var DATA=[
+ {title:"Проверка шины", cmds:[
+   ["ATZ","ELM327 v…"],["ATI","ELM327 v2.2"],["STP33","OK"],["STPR","33"],
+   ["STPRS","ISO 15765, 11-bit, 500kbps, DLC=8"],["STPBRR","500000"]]},
+ {title:"Инициализация", cmds:[
+   ["ATE0","OK"],["ATL0","OK"],["ATH1","OK"],["ATS0","OK"],["ATR1","OK"],["ATM0","OK"],
+   ["STPC","OK"],["STP33","OK"],["ATAL","OK"],["ATV0","OK"],
+   ["ATSH 72B","OK"],["ATCRA 7AB","OK"],["ATFCSH 72B","OK"],["ATFCSD 30 00 14","OK"],
+   ["ATFCSM 1","OK"],["ATCAF 1","OK"],["ATCFC 1","OK"],["ATAT 0","OK"],["STPTO 1020","OK"]]},
+ {title:"Обмен", cmds:[
+   ["ATI","ELM327 v2.2"],["22F190","62F190 + VIN"],
+   ["22F189","62F189 + 8789CVN020  S.242"],["STPC","OK"],
+   ["1003","5003"],["STPC","OK"],["2701","6701 + seed"],
+   ["2702<KEY>","6702",1],["31012B00","71012B0000"],["1001","5001"],
+   ["22F186","62F186 …"],["ATZ","баннер"]]}
+];
+
+var keyRowCmd=null;
+function el(tag,cls,txt){var n=document.createElement(tag);if(cls)n.className=cls;if(txt!=null)n.textContent=txt;return n;}
+function toast(msg){var t=document.getElementById("toast");t.textContent=msg;t.classList.add("on");
+  clearTimeout(toast._h);toast._h=setTimeout(function(){t.classList.remove("on");},1400);}
+function copy(text){ 
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){toast("скопировано: "+text);},
+      function(){fallback(text);});
+  } else { fallback(text); }
+  function fallback(t){var ta=document.createElement("textarea");ta.value=t;ta.style.position="fixed";
+    ta.style.opacity="0";document.body.appendChild(ta);ta.select();
+    try{document.execCommand("copy");toast("скопировано: "+t);}catch(e){toast(t);}
+    document.body.removeChild(ta);}
+}
+
+var keyText="", currentKey=null;
+function effectiveCmd(item){
+  if(item.cmd==="2702<KEY>") return "2702"+(currentKey||"");
+  return item.cmd;
+}
+
+var host=document.getElementById("groups");
+DATA.forEach(function(g){
+  var head=el("div","grouphead");
+  head.appendChild(el("h2",null,g.title));
+  var all=el("button","btn small","копировать все");
+  all.addEventListener("click",function(){
+    copy(g.cmds.map(effectiveCmd).join("\n"));});
+  head.appendChild(all);
+  host.appendChild(head);
+
+  var sec=el("section"); var ul=el("ul");
+  g.cmds.forEach(function(item){
+    var row=el("li","row"+(item[2]?" hot":""));
+    var cb=document.createElement("input");cb.type="checkbox";
+    cb.addEventListener("change",function(){row.classList.toggle("done",cb.checked);});
+    var code=el("code","cmd",item[0]);
+    if(item[2])keyRowCmd=code;
+    code.addEventListener("click",function(){copy(effectiveCmd(item));});
+    var exp=el("span","exp",item[1]||"");
+    row.appendChild(cb);row.appendChild(code);row.appendChild(exp);
+    ul.appendChild(row);
+  });
+  sec.appendChild(ul);host.appendChild(sec);
+});
+
+var seedEl=document.getElementById("seed"),keyEl=document.getElementById("key"),
+    sendEl=document.getElementById("send");
+function update(){
+  var s=(seedEl.value||"").replace(/[^0-9a-fA-F]/g,"").toUpperCase();
+  var txt;
+  if(s.length===0){keyEl.textContent="— — — —";keyEl.className="key";
+    currentKey=null;txt="2702________";}
+  else if(s.length!==8){keyEl.textContent="…";keyEl.className="key bad";
+    currentKey=null;txt="2702________";}
+  else{currentKey=seed2key(s);keyEl.textContent=currentKey;keyEl.className="key";
+    txt="2702"+currentKey;}
+  sendEl.innerHTML="→ отправить: <b>"+txt+"</b>";
+  if(keyRowCmd)keyRowCmd.textContent="2702"+(currentKey||"<KEY>");
+}
+seedEl.addEventListener("input",update);
+sendEl.addEventListener("click",function(){ if(currentKey) copy("2702"+currentKey); });
+update();
+</script>
+</body>
+</html>
