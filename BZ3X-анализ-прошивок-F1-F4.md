@@ -63,7 +63,7 @@ vr.zip         голосовые ресурсы iFlytek
 | AES S‑box `637C777BF26B6FC5…` | 1926116 | 1947444 | 1966788 |
 
 Это **подтверждает провенанс ключа**, который используется в
-`bz3x_menu_linux.py`, `bz3x_key.html`, `bz3x_card.html`, `app.html`
+`bz3x_menu_linux.py`, `index.html` и `card.html`
 и проверен на 6 векторах seed→key. Ключ — **константа, одна и та же**
 во всех версиях S.202 / S.214 / S.222.
 

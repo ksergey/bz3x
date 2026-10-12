@@ -111,7 +111,7 @@ STPC             → OK          (было ATPC)
 1003             → 5003
 STPC             → OK          (было ATPC)
 2701             → 6701 + SSSSSSSS   ← seed (4 байта)
-   ← здесь считаем ключ (bz3x_card.html / bz3x_key.html): seed → KEY
+   ← здесь считаем ключ (card.html — генератор Seed→Key): seed → KEY
 2702<KEY>        → 6702        (ключ принят)
 31012B00         → 71012B0000  (меню открыто)
 1001             → 5001
