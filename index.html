@@ -69,10 +69,27 @@
   .chip.go{border-color:var(--accent);color:var(--accent)}
   .chip.run{border-color:var(--err);color:var(--err)}
   /* вкладки + панели процедуры */
-  .tabs{display:flex;gap:6px;margin:2px 0 8px}
-  .tab{flex:1;min-height:38px;padding:0 8px;border:1px solid var(--line);border-radius:8px;
-    background:var(--panel);color:var(--dim);font:inherit;font-size:13px;cursor:pointer;touch-action:manipulation}
+  .tabs{display:flex;gap:6px;margin:2px 0 8px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex:0 0 auto;min-height:38px;padding:0 13px;border:1px solid var(--line);border-radius:8px;
+    background:var(--panel);color:var(--dim);font:inherit;font-size:13px;cursor:pointer;
+    white-space:nowrap;touch-action:manipulation}
   .tab.on{color:var(--fg);border-color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent)}
+  .procinfo{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px 14px;
+    font-size:13px;line-height:1.6;color:var(--dim)}
+  .procinfo h3{color:var(--fg);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 6px}
+  .procinfo h3:first-child{margin-top:0}
+  .procinfo b{color:var(--fg)} .procinfo code{color:var(--accent)}
+  .procinfo p{margin:6px 0} .procinfo ul{margin:4px 0;padding-left:18px} .procinfo li{margin:3px 0}
+  .procinfo pre{white-space:pre;overflow-x:auto;-webkit-overflow-scrolling:touch;background:var(--panel2);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:6px 0;font-size:12px;color:var(--fg)}
+  #view-card .sheetbody{flex:1;min-height:0}
+  .seg2{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel2)}
+  .segbtn{min-height:40px;padding:0 15px;border:0;background:transparent;color:var(--dim);
+    font:inherit;font-size:13px;cursor:pointer;touch-action:manipulation}
+  .segbtn+.segbtn{border-left:1px solid var(--line)}
+  .segbtn.on{background:var(--accent);color:#06211b}
+  html[data-theme="light"] .segbtn.on{color:#fff}
   .view{flex:1;min-height:0;display:flex;flex-direction:column}
   .view.hidden{display:none}
   .proc{flex:1;min-height:0;display:flex;flex-direction:column;border:1px solid var(--line);
@@ -173,8 +190,9 @@
 
   <div class="tabs">
     <button class="tab on" data-view="term">Терминал</button>
-    <button class="tab" data-view="hs">HS-CAN</button>
-    <button class="tab" data-view="ms">MS-CAN</button>
+    <button class="tab" data-view="proc">Процедура</button>
+    <button class="tab" data-view="adb">ADB</button>
+    <button class="tab" data-view="card">Шпаргалка</button>
   </div>
 
   <div id="view-term" class="view">
@@ -204,33 +222,93 @@
     </div>
   </div>
 
-  <div id="view-hs" class="view hidden">
+  <div id="view-proc" class="view hidden">
     <div class="proc">
-      <div class="prochead">Процедура · <b>HS-CAN 500k</b> — ATTP6, пины 6/14 (как bz3x-menu.exe).
-        Переключатель кабеля HS/MS — в HS.</div>
+      <div class="prochead">Процедура авторизации. Шина — переключателем ниже.
+        «Открыть меню» = <code>31012B00</code>, «Включить ADB» = <code>3101AE6501</code>.</div>
+      <div class="procbar">
+        <div class="seg2" id="busSeg">
+          <button class="segbtn on" data-bus="ms">MS-CAN · 3/11</button>
+          <button class="segbtn" data-bus="hs">HS-CAN · 6/14</button>
+        </div>
+      </div>
       <div class="procbar">
         <button class="chip go pUsb">🔌 USB</button>
         <button class="chip go pBle">📶 BLE</button>
-        <button class="chip run" id="runHs">> выполнить процедуру</button>
+        <button class="chip run" id="runMenu">> открыть меню</button>
+        <button class="chip" id="runAdb">> включить ADB</button>
       </div>
-      <ol class="steps" id="stepsHs"></ol>
-      <div class="verdict" id="verdictHs"></div>
-      <pre class="plog" id="plogHs"></pre>
+      <ol class="steps" id="stepsProc"></ol>
+      <div class="verdict" id="verdictProc"></div>
+      <pre class="plog" id="plogProc"></pre>
     </div>
   </div>
 
-  <div id="view-ms" class="view hidden">
+  <div id="view-adb" class="view hidden">
     <div class="proc">
-      <div class="prochead">Процедура · <b>MS-CAN 125k</b> — STP53, пины 3/11 (пассажирский разъём).
-        Нужен STN-адаптер (vLinker MC+/OBDLink).</div>
-      <div class="procbar">
-        <button class="chip go pUsb">🔌 USB</button>
-        <button class="chip go pBle">📶 BLE</button>
-        <button class="chip run" id="runMs">> выполнить процедуру</button>
+      <div class="prochead">ADB · справка (без действий) — что делает <b>bz3x-russian.exe</b></div>
+      <div class="procinfo">
+        <h3>Две фазы</h3>
+        <ul>
+          <li><b>1. Включить ADB — по CAN</b> (эта страница умеет): та же авторизация, но рутина
+            <code>3101AE6501</code> (успех <code>7101AE6500</code>) вместо открытия меню
+            <code>31012B00</code>. Включает USB-debugging на ГУ. → вкладка «Процедура», кнопка «включить ADB».</li>
+          <li><b>2. Русификация — по USB ADB</b> (только ПК-инструмент): ноутбук втыкается USB-кабелем
+            в порт мультимедиа, дальше работает вшитый <b>platform-tools 37.0.1</b>.</li>
+        </ul>
+        <h3>Что шлётся по ADB (фаза 2)</h3>
+        <p>Смена языка — без root и без <code>setprop</code>:</p>
+        <pre>adb shell app_process … Bz3xVisitHelper locale ru-RU --apply
+adb shell getprop persist.sys.locale      # проверка == ru-RU</pre>
+        <p>Хелпер <code>Bz3xVisitHelper</code> вызывает системный <code>updatePersistentConfiguration</code>
+          с <code>LocaleList ru-RU</code>; результат читается обратно. Пишутся
+          <code>locale-before/after.json</code>.</p>
+        <h3>Перезагрузка (по согласию, команда REBOOT)</h3>
+        <pre>adb reboot                                 # обычный, без recovery/bootloader
+adb shell cat /proc/sys/kernel/random/boot_id   # сверка before/after
+adb shell getprop sys.boot_completed       # ждёт завершения загрузки
+adb wait-for-device                        # возврат ADB (~2 мин)</pre>
+        <h3>Чего НЕ делает по ADB</h3>
+        <ul>
+          <li>не ставит сторонние APK (только свой locale-хелпер через <code>app_process</code>);</li>
+          <li>не пишет <code>setprop</code>/<code>settings</code>, не использует <code>su</code>/root;</li>
+          <li>меняет только системную локаль; настройки маленькой приборки не трогает;</li>
+          <li>ADB после работы сам не выключает.</li>
+        </ul>
+        <h3>Гейты совместимости</h3>
+        <p>IHU <code>8789CVN020&nbsp;&nbsp;S.242</code> и Android
+          <code>GTMC_AY5T_AVNT_S0_260501_0514W_R</code> (API30) — иначе стоп. Ключ seed→key и
+          <code>auth-pending</code> lockout — те же, что в menu-тулзе.</p>
+        <p style="color:var(--note)">⚠ По USB ADB из браузера работать нельзя (нет доступа к ADB-протоколу
+          по USB). Эта вкладка — справка; реальную русификацию делает <b>bz3x-russian.exe</b> на ПК.</p>
       </div>
-      <ol class="steps" id="stepsMs"></ol>
-      <div class="verdict" id="verdictMs"></div>
-      <pre class="plog" id="plogMs"></pre>
+    </div>
+  </div>
+
+  <div id="view-card" class="view hidden">
+    <div class="proc">
+      <div class="prochead">Шпаргалка · клик по команде — вставить в prompt терминала</div>
+      <div class="sheetbody" id="cardBody">
+        <div class="grphead"><h2>КАКОЙ РАЗЪЁМ (bZ3X)</h2></div>
+        <div class="obd">
+          <p class="obdcap">Два OBD-разъёма. Рабочий для ГУ — <span class="ms">СПРАВА, со стороны
+            пассажира</span> (не левый под рулём).</p>
+          <pre class="pins">3/11  MS-CAN -&gt; ГУ  &lt;= этот
+6/14  HS-CAN
+4/5   GND
+16    +12V</pre>
+          <p class="obdcap">На правильном <code>STP53</code> + <code>22F190</code> проходят;
+            на неправильном — <b>CAN ERROR</b>.</p>
+        </div>
+        <div id="groups"></div>
+        <p class="sheetnote">
+          СТОП при <b>?</b> / ERROR / NO DATA / CAN ERROR / BUS ERROR / UNABLE TO CONNECT / <b>7F xx xx</b>.<br>
+          Версия должна быть <b>8789CVN020&nbsp;&nbsp;S.242</b>, иначе ключ не отправлять.<br>
+          Шина IHU — <b>MS-CAN 125k</b> (<code>STP53</code>, пины OBD <b>3/11</b>).<br>
+          seed-&gt;key считается на самой странице (keybar в терминале или <code>/key &lt;seed&gt;</code>);
+          строка <code>2702&lt;KEY&gt;</code> подставит текущий ключ.
+        </p>
+      </div>
     </div>
   </div>
 
@@ -247,37 +325,6 @@
   </div>
 </div>
 
-<div id="sheet" class="sheet">
-  <div class="sheetbox">
-    <div class="sheethead">
-      <b>шпаргалка</b> <span class="d">клик по команде — вставить в prompt</span>
-      <button class="x" id="sheetClose" title="закрыть (Esc)">✕</button>
-    </div>
-    <div class="sheetbody">
-      <div class="grphead"><h2>КАКОЙ РАЗЪЁМ (bZ3X)</h2></div>
-      <div class="obd">
-        <p class="obdcap">Два OBD-разъёма. Рабочий для ГУ — <span class="ms">СПРАВА, со стороны
-          пассажира</span> (не левый под рулём).</p>
-        <pre class="pins">3/11  MS-CAN -&gt; ГУ  &lt;= этот
-6/14  HS-CAN
-4/5   GND
-16    +12V</pre>
-        <p class="obdcap">На правильном <code>STP53</code> + <code>22F190</code> проходят;
-          на неправильном — <b>CAN ERROR</b>.</p>
-      </div>
-      <div id="groups"></div>
-      <p class="sheetnote">
-        СТОП при <b>?</b> / ERROR / NO DATA / CAN ERROR / BUS ERROR / UNABLE TO CONNECT / <b>7F xx xx</b>.<br>
-        Версия должна быть <b>8789CVN020&nbsp;&nbsp;S.242</b>, иначе ключ не отправлять.<br>
-        Шина IHU — <b>MS-CAN 125k</b> (<code>STP53</code>, пины OBD <b>3/11</b>).<br>
-        Если на <code>STP53</code> вернулось <b>?</b> — адаптер/прошивка без MS-CAN; запасной
-        вариант — <code>ATTP6</code> / <code>STP33</code> (HS-CAN 500k, пины 6/14).<br>
-        seed->key считается на самой странице (keybar внизу или <code>/key &lt;seed&gt;</code>);
-        строка <code>2702&lt;KEY&gt;</code> подставит текущий ключ.
-      </p>
-    </div>
-  </div>
-</div>
 <div id="toast"></div>
 
 <script>
@@ -665,11 +712,12 @@ async function teardown(fromUI){
    UI state
    ============================================================ */
 function setConn(msg,cls){var p=$("#conn");$("#connTxt").textContent=msg;p.className="pill"+(cls?" "+cls:"");}
-function setBusy(b){$("#cmd").disabled=b;["#runHs","#runMs","#cRun"].forEach(function(id){var e=$(id);if(e)e.disabled=b;});}
+function setBusy(b){$("#cmd").disabled=b;["#runMenu","#runAdb","#cRun"].forEach(function(id){var e=$(id);if(e)e.disabled=b;});}
 
 /* ============================================================
-   процедуры во вкладках HS-CAN / MS-CAN (как bz3x-menu.exe),
-   с пошаговым статусом и валидацией ответов адаптера
+   вкладка «Процедура» (как bz3x-menu.exe / bz3x-russian.exe):
+   шина MS/HS переключателем, действие — меню (31012B00) или ADB (3101AE6501),
+   пошаговый статус и валидация ответов адаптера
    ============================================================ */
 var STEP_DEFS=[
   ["init","инициализация адаптера"],
@@ -680,15 +728,17 @@ var STEP_DEFS=[
   ["sess","extended session (1003)"],
   ["seed","seed (2701)"],
   ["key","ключ (2702)"],
-  ["open","открытие меню (31012B00)"],
+  ["act","действие"],
   ["restore","возврат сессии (1001)"]
 ];
-function buildSteps(listId,busLabel){
+function actLabel(mode){return mode==="adb"?"включение ADB (3101AE6501)":"открытие меню (31012B00)";}
+function buildSteps(listId,busLabel,mode){
   var ol=$("#"+listId);ol.innerHTML="";
   STEP_DEFS.forEach(function(d){
     var li=document.createElement("li");li.className="pend";li.setAttribute("data-k",d[0]);
     var st=document.createElement("span");st.className="st";st.textContent="·";
-    var lb=document.createElement("span");lb.className="lb";lb.textContent=(d[0]==="bus"?busLabel:d[1]);
+    var lb=document.createElement("span");lb.className="lb";
+    lb.textContent=(d[0]==="bus"?busLabel:(d[0]==="act"?actLabel(mode):d[1]));
     var dt=document.createElement("span");dt.className="dt";
     li.appendChild(st);li.appendChild(lb);li.appendChild(dt);ol.appendChild(li);
   });
@@ -703,19 +753,23 @@ function failRunning(listId,msg){
   var li=$("#"+listId+" li.run");if(li){li.className="fail";li.querySelector(".st").textContent="×";
     li.querySelector(".dt").textContent=(msg||"").slice(0,40);}
 }
-async function runProcedure(busPref){
+async function runProcedure(mode){
+  var busPref=T.busPref;  // шина берётся из переключателя (общий с терминалом)
+  var ACT=(mode==="adb")
+    ? {cmd:"3101AE6501",exp:"7101AE6500",okdt:"ADB включён (7101AE6500)",name:"включение ADB"}
+    : {cmd:"31012B00",exp:"71012B00",okdt:"меню открыто (71012B00)",name:"открытие меню"};
   if(!T.connected){toast("нет соединения — подключите адаптер");return;}
   if(T.authPending){logLine("×","ЗАБЛОКИРОВАНО (auth-pending): «"+T.authPending+"». Сними блок: /authreset","err");
     toast("auth-pending: /authreset");return;}
-  if(!confirm("Выполнить процедуру открытия меню по "+busPref.toUpperCase()+"-CAN?\nТолько своя машина, селектор в P, мультимедиа включена."))return;
+  if(!confirm(ACT.name.toUpperCase()+" по "+busPref.toUpperCase()+"-CAN?\nТолько своя машина, селектор в P, мультимедиа включена."))return;
   T.armed=true;setFoot();
-  var L=(busPref==="hs")?"Hs":"Ms", stepsId="steps"+L, plog=$("#plog"+L), verdict=$("#verdict"+L);
-  buildSteps(stepsId, busPref==="ms"?"шина MS-CAN (STP53, 3/11)":"шина HS-CAN (ATTP6, 6/14)");
+  var stepsId="stepsProc", plog=$("#plogProc"), verdict=$("#verdictProc");
+  buildSteps(stepsId, busPref==="ms"?"шина MS-CAN (STP53, 3/11)":"шина HS-CAN (ATTP6, 6/14)", mode);
   plog.textContent="";verdict.className="verdict";verdict.textContent="";
   var prev=activeLog;activeLog=plog;setBusy(true);
   var keyPhase=false,R={bus:null,vin:null,ver:null,seed:null,key:null};
   var m=function(k,s,d){pstep(stepsId,k,s,d);};
-  logLine("▌","==== ПРОЦЕДУРА "+busPref.toUpperCase()+"-CAN ====","note");
+  logLine("▌","==== ПРОЦЕДУРА: "+ACT.name.toUpperCase()+" · "+busPref.toUpperCase()+"-CAN ====","note");
   try{
     m("init","run");for(var i=0;i<INIT_PRE.length;i++)await at(INIT_PRE[i]);m("init","ok");
 
@@ -747,7 +801,7 @@ async function runProcedure(busPref){
 
     m("key","run");keyPhase=true;await uds("2702"+R.key,"6702",{atpc:false});m("key","ok",R.key);
 
-    m("open","run");await uds("31012B00","71012B00",{atpc:false});keyPhase=false;m("open","ok","71012B00");
+    m("act","run");await uds(ACT.cmd,ACT.exp,{atpc:false});keyPhase=false;m("act","ok",ACT.okdt);
 
     stopKeepAlive();
     m("restore","run");await uds("1001","5001");
@@ -756,7 +810,9 @@ async function runProcedure(busPref){
     m("restore","ok");
 
     verdict.className="verdict pass";
-    verdict.textContent="PASS — меню открыто (71012B00). VIN "+R.vin+" · "+R.bus+" · key "+R.key+". Проверь экран мультимедиа.";
+    verdict.textContent="PASS — "+ACT.okdt+". VIN "+R.vin+" · "+R.bus+" · key "+R.key+"."
+      +(mode==="adb"?" ADB на ГУ включён; дальше ru-RU/локаль — по USB ADB (нужен bz3x-russian.exe на ПК)."
+                    :" Проверь экран мультимедиа.");
     logLine("▌","==== PASS ====","ok");
   }catch(e){
     failRunning(stepsId,e.message);
@@ -772,10 +828,14 @@ async function runProcedure(busPref){
   }
 }
 function switchView(v){
-  ["term","hs","ms"].forEach(function(name){
+  ["term","proc","adb","card"].forEach(function(name){
     var el=$("#view-"+name);if(el)el.classList.toggle("hidden",name!==v);
   });
   document.querySelectorAll(".tab").forEach(function(t){t.classList.toggle("on",t.getAttribute("data-view")===v);});
+}
+function setBusPref(p){                       // общий переключатель шины (терминал + процедура)
+  T.busPref=p;setFoot();
+  document.querySelectorAll("#busSeg .segbtn").forEach(function(b){b.classList.toggle("on",b.getAttribute("data-bus")===p);});
 }
 function afterConnect(){$("#cmd").focus();}
 function afterDisconnect(){teardown(true);}
@@ -850,7 +910,7 @@ async function onCommand(raw){
       case "ati": if(T.connected){try{logLine("✓",await atIdentity(),"ok");}catch(e){logLine("×",e.message,"err");}}else logLine("×","нет соединения","err");break;
       case "vin": await readVin();break;
       case "dtc": await readDtc();break;
-      case "bus": if(a==="ms"||a==="hs"){T.busPref=a;setFoot();logLine("—","шина по умолчанию: "+a.toUpperCase()+"-CAN","note");}else logLine("×","/bus ms | hs","err");break;
+      case "bus": if(a==="ms"||a==="hs"){setBusPref(a);logLine("—","шина: "+a.toUpperCase()+"-CAN","note");}else logLine("×","/bus ms | hs","err");break;
       case "authreset": clearAuthPending();break;
       case "key": try{var k=seed2key(a||"");setSeed(a);logLine("✓","seed "+(a||"").toUpperCase()+" -> key "+k+"  (2702"+k+")","ok");}catch(e){logLine("×",e.message,"err");}break;
       case "run":
@@ -901,7 +961,7 @@ var SHEET=[
 function execCmd(it){return it[0].indexOf("<KEY>")>=0?("2702"+(currentKey||"")):it[0];}
 function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._h);toast._h=setTimeout(function(){t.classList.remove("on");},1400);}
 function copySheet(text){if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(function(){toast("скопировано");},function(){toast("не удалось");});else toast("буфер недоступен");}
-function insertCmd(cmd){var i=$("#cmd");i.value=cmd;closeSheet();i.focus();}
+function insertCmd(cmd){var i=$("#cmd");i.value=cmd;switchView("term");i.focus();}
 function buildSheet(){
   var host=$("#groups");host.innerHTML="";
   SHEET.forEach(function(g){
@@ -922,13 +982,9 @@ function buildSheet(){
     wrap.appendChild(box);host.appendChild(wrap);
   });
 }
-var _sheetBuilt=false;
-function openSheet(){if(!_sheetBuilt){buildSheet();_sheetBuilt=true;}$("#sheet").classList.add("on");}
-function closeSheet(){$("#sheet").classList.remove("on");}
-$("#cardLink").addEventListener("click",function(e){e.preventDefault();openSheet();});
-$("#sheetClose").addEventListener("click",closeSheet);
-$("#sheet").addEventListener("click",function(e){if(e.target===this)closeSheet();});
-document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("#sheet").classList.contains("on"))closeSheet();});
+function openSheet(){switchView("card");}   // шпаргалка теперь вкладка
+buildSheet();                               // строим список команд один раз при загрузке
+$("#cardLink").addEventListener("click",function(e){e.preventDefault();switchView("card");});
 
 /* ---- быстрые кнопки (телефон) ---- */
 $("#cUsb").addEventListener("click",function(){connectSerial(0);});
@@ -944,20 +1000,21 @@ $("#cRun").addEventListener("click",function(){
     T.armed=true;setFoot();runSequence();
   }
 });
-$("#cCard").addEventListener("click",openSheet);
+$("#cCard").addEventListener("click",function(){switchView("card");});
 $("#cBus").addEventListener("click",function(){
-  T.busPref=(T.busPref==="ms")?"hs":"ms";setFoot();
+  setBusPref(T.busPref==="ms"?"hs":"ms");
   logLine("—","шина: "+T.busPref.toUpperCase()+"-CAN "+(T.busPref==="ms"?"(STP53, пины 3/11)":"(ATTP6, пины 6/14 — как bz3x-menu.exe)"),"note");
 });
 
-/* ---- вкладки + процедуры ---- */
+/* ---- вкладки + процедура ---- */
 document.querySelectorAll(".tab").forEach(function(t){t.addEventListener("click",function(){switchView(t.getAttribute("data-view"));});});
-$("#runHs").addEventListener("click",function(){runProcedure("hs");});
-$("#runMs").addEventListener("click",function(){runProcedure("ms");});
+document.querySelectorAll("#busSeg .segbtn").forEach(function(b){b.addEventListener("click",function(){setBusPref(b.getAttribute("data-bus"));});});
+$("#runMenu").addEventListener("click",function(){runProcedure("menu");});
+$("#runAdb").addEventListener("click",function(){runProcedure("adb");});
 document.querySelectorAll(".pUsb").forEach(function(b){b.addEventListener("click",function(){connectSerial(0);});});
 document.querySelectorAll(".pBle").forEach(function(b){b.addEventListener("click",function(){connectBle("");});});
-buildSteps("stepsHs","шина HS-CAN (ATTP6, 6/14)");
-buildSteps("stepsMs","шина MS-CAN (STP53, 3/11)");
+buildSteps("stepsProc","шина MS-CAN (STP53, 3/11)","menu");
+setBusPref(T.busPref);
 
 /* ---- theme ---- */
 (function(){
