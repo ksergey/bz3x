@@ -148,14 +148,17 @@
     cursor:pointer;padding:7px 4px;touch-action:manipulation}
   .grphead .copyall:hover{text-decoration:underline}
   .cmds{border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel)}
-  .crow{display:flex;gap:10px;align-items:center;min-height:46px;padding:9px 12px;
+  .crow{display:flex;flex-direction:column;gap:3px;padding:9px 12px;
     border-bottom:1px solid var(--line);touch-action:manipulation}
   .crow:last-child{border-bottom:0}
   .crow:hover{background:var(--panel2)} .crow:active{background:var(--panel2)}
+  .crow .toprow{display:flex;gap:10px;align-items:baseline}
   .crow .c{font-weight:600;color:var(--fg);cursor:pointer;white-space:nowrap}
   .crow .c:hover{color:var(--accent)}
   .crow.hot .c{color:var(--note)}
-  .crow .e{margin-left:auto;text-align:right;color:var(--faint);font-size:12px}
+  .crow .e{margin-left:auto;text-align:right;color:var(--faint);font-size:12px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%}
+  .crow .cd{color:var(--dim);font-size:11.5px;line-height:1.35}
   .sheetnote{color:var(--dim);font-size:12px;line-height:1.6;margin:8px 2px 0}
   .sheetnote b{color:var(--fg)} .sheetnote code{color:var(--accent)}
   /* схема OBD-II */
@@ -955,18 +958,44 @@ $("#sendline").addEventListener("click",function(){
 /* ---- встроенная шпаргалка ---- */
 var SHEET=[
  {t:"Проверка шины",c:[
-   ["ATZ","ELM327 v…"],["ATI","ELM327 v2.2"],["STP53","OK — MS-CAN 125k"],
-   ["STPR","53"],["STPRS","ISO 15765, 11-bit, 125k"],["STPBRR","125000"],
-   ["STP33","OK (запас: HS-CAN 500k)"]]},
+   ["ATZ","ELM327 v…",0,"сброс адаптера к заводским"],
+   ["ATI","ELM327 v2.2",0,"идентификация / версия адаптера"],
+   ["STP53","OK — MS-CAN 125k",0,"выбрать протокол MS-CAN (ISO 15765, 125k, пины 3/11)"],
+   ["STPR","53",0,"номер текущего протокола"],
+   ["STPRS","ISO 15765, 11-bit, 125k",0,"протокол строкой (описание)"],
+   ["STPBRR","125000",0,"текущая скорость шины"],
+   ["STP33","OK (запас: HS-CAN 500k)",0,"запасной протокол HS-CAN 500k (пины 6/14)"]]},
  {t:"Инициализация",c:[
-   ["ATE0","OK"],["ATL0","OK"],["ATH1","OK"],["ATS0","OK"],["ATR1","OK"],["ATM0","OK"],
-   ["STPC","OK"],["STP53","OK"],["ATAL","OK"],["ATV0","OK"],
-   ["ATSH72B","OK"],["ATCRA7AB","OK"],["ATFCSH72B","OK"],["ATFCSD300014","OK"],
-   ["ATFCSM1","OK"],["ATCAF1","OK"],["ATCFC1","OK"],["ATAT0","OK"],["ATSTFF","OK"]]},
+   ["ATE0","OK",0,"эхо выкл (не повторять команду)"],
+   ["ATL0","OK",0,"без перевода строк (LF)"],
+   ["ATH1","OK",0,"показывать заголовки (CAN ID отправителя)"],
+   ["ATS0","OK",0,"без пробелов в ответе"],
+   ["ATR1","OK",0,"ждать ответ"],
+   ["ATM0","OK",0,"память выкл"],
+   ["STPC","OK",0,"закрыть текущий протокол"],
+   ["STP53","OK",0,"выбрать MS-CAN"],
+   ["ATAL","OK",0,"разрешить длинные сообщения (>7 байт)"],
+   ["ATV0","OK",0,"формат ответа (служебная)"],
+   ["ATSH72B","OK",0,"заголовок запроса = 0x72B (адрес ГУ)"],
+   ["ATCRA7AB","OK",0,"фильтр приёма = 0x7AB (ответы ГУ)"],
+   ["ATFCSH72B","OK",0,"Flow Control: заголовок 0x72B"],
+   ["ATFCSD300014","OK",0,"FC-данные 30 00 14 (CTS, BS 0, STmin 20 мс)"],
+   ["ATFCSM1","OK",0,"FC режим 1 — ручные FCSH/FCSD"],
+   ["ATCAF1","OK",0,"авто-сборка ISO-TP вкл"],
+   ["ATCFC1","OK",0,"авто Flow Control вкл"],
+   ["ATAT0","OK",0,"адаптивное ожидание выкл"],
+   ["ATSTFF","OK",0,"таймаут ответа макс (0xFF × 4 мс)"]]},
  {t:"Обмен",c:[
-   ["ATI","ELM327 v2.2"],["22F190","62F190 + VIN"],["22F189","62F189 + S.242"],
-   ["1003","5003"],["2701","6701 + seed"],["2702<KEY>","6702",1],
-   ["31012B00","71012B00"],["1001","5001"],["22F186","62F186 …"],["ATZ","баннер"]]}
+   ["ATI","ELM327 v2.2",0,"идентификация адаптера"],
+   ["22F190","62F190 + VIN",0,"чтение VIN (UDS ReadDataByIdentifier, DID F190)"],
+   ["22F189","62F189 + S.242",0,"версия ПО ГУ (DID F189) — гейт S.242"],
+   ["1003","5003",0,"расширенная диаг. сессия (DiagnosticSessionControl)"],
+   ["2701","6701 + seed",0,"запрос seed (SecurityAccess, уровень 01)"],
+   ["2702<KEY>","6702",1,"отправка ключа (SecurityAccess, уровень 02)"],
+   ["31012B00","71012B00",0,"открыть инж. меню (RoutineControl, рутина 2B00)"],
+   ["1001","5001",0,"обычная диаг. сессия (default)"],
+   ["22F186","62F186 …",0,"текущая активная сессия (DID F186)"],
+   ["ATZ","баннер",0,"сброс адаптера в конце"]]}
 ];
 function execCmd(it){return it[0].indexOf("<KEY>")>=0?("2702"+(currentKey||"")):it[0];}
 function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._h);toast._h=setTimeout(function(){t.classList.remove("on");},1400);}
@@ -984,10 +1013,13 @@ function buildSheet(){
     var box=document.createElement("div");box.className="cmds";
     g.c.forEach(function(it){
       var row=document.createElement("div");row.className="crow"+(it[2]?" hot":"");
+      var top=document.createElement("div");top.className="toprow";
       var c=document.createElement("span");c.className="c";c.textContent=it[0];
       c.title="вставить в prompt";c.addEventListener("click",function(){insertCmd(execCmd(it));});
       var e=document.createElement("span");e.className="e";e.textContent=it[1]||"";
-      row.appendChild(c);row.appendChild(e);box.appendChild(row);
+      top.appendChild(c);top.appendChild(e);row.appendChild(top);
+      if(it[3]){var cd=document.createElement("div");cd.className="cd";cd.textContent=it[3];row.appendChild(cd);}
+      box.appendChild(row);
     });
     wrap.appendChild(box);host.appendChild(wrap);
   });
