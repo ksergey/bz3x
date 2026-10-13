@@ -207,6 +207,7 @@
   <div class="tabs">
     <button class="tab on" data-view="term">Терминал</button>
     <button class="tab" data-view="cmds">Команды</button>
+    <button class="tab" data-view="scan">Скан</button>
     <button class="tab" data-view="card">Шпаргалка</button>
   </div>
 
@@ -245,6 +246,20 @@
         <button class="chip run" id="cmdSend">> отправить в терминал</button>
       </div>
       <div class="cmdlist" id="cmdList"></div>
+    </div>
+  </div>
+
+  <div id="view-scan" class="view hidden">
+    <div class="proc">
+      <div class="prochead">Сканирование шины — <b>только слушает</b> (ATMA), ничего не передаёт.
+        Приборку не трогает. Ищет, где есть трафик и на какой скорости.</div>
+      <div class="procbar">
+        <button class="chip go pUsb">🔌 USB</button>
+        <button class="chip go pBle">📶 BLE</button>
+        <button class="chip run" id="scanRun">> сканировать</button>
+      </div>
+      <div class="cmdlist" id="scanList" style="flex:0 0 auto;max-height:46vh"></div>
+      <pre class="plog" id="scanLog"></pre>
     </div>
   </div>
 
@@ -604,7 +619,7 @@ async function teardown(fromUI){
    UI state
    ============================================================ */
 function setConn(msg,cls){var p=$("#conn");$("#connTxt").textContent=msg;p.className="pill"+(cls?" "+cls:"");}
-function setBusy(b){$("#cmd").disabled=b;var e=$("#cmdSend");if(e)e.disabled=b;}
+function setBusy(b){$("#cmd").disabled=b;["#cmdSend","#scanRun"].forEach(function(id){var e=$(id);if(e)e.disabled=b;});}
 
 /* ============================================================
    вкладка «Команды»: чеклист, отправка в терминал по порядку с валидацией
@@ -693,8 +708,91 @@ async function sendChecked(){
   }finally{setBusy(false);}
 }
 
+/* ============================================================
+   вкладка «Скан»: пассивный поиск шины через ATMA (без передачи)
+   ============================================================ */
+var SCAN=[
+  {name:"MS-CAN  3/11 @ 125k", setup:["STPC","STP53"]},
+  {name:"MS-CAN  3/11 @ 95.2k", setup:["STPC","STP53","STPBR95238"]},
+  {name:"HS-CAN  6/14 @ 500k", setup:["STPC","STP33"]},
+  {name:"HS-CAN  6/14 @ 250k", setup:["STPC","STP33","STPBR250000"]},
+  {name:"HS-CAN  6/14 @ 125k", setup:["STPC","STP33","STPBR125000"]}
+];
+function buildScan(){
+  var host=$("#scanList");host.innerHTML="";
+  SCAN.forEach(function(it){
+    var row=document.createElement("div");row.className="cmdrow";row.setAttribute("data-name",it.name);
+    var st=document.createElement("span");st.className="st";st.textContent="·";
+    var cc=document.createElement("span");cc.className="cc";cc.textContent=it.name;
+    var cd=document.createElement("span");cd.className="cdesc";cd.textContent="—";
+    row.appendChild(st);row.appendChild(cc);row.appendChild(cd);host.appendChild(row);
+  });
+}
+function monitor(ms){   // ATMA на ms мс, затем стоп-символ; протокол уже выбран. Ничего не передаёт в шину.
+  return locked(function(){
+    return drainIdle(100).then(async function(){
+      T.buf="";T.lastData=Date.now();
+      await writeBytes(new TextEncoder().encode("ATMA\r"));
+      await sleep(ms);
+      await writeBytes(new TextEncoder().encode("\r"));   // стоп мониторинга
+      await sleep(220);
+      var txt=T.buf;T.buf="";return txt;
+    });
+  });
+}
+function parseFrames(txt){
+  var lines=String(txt).replace(/\r/g,"\n").split("\n"),ids={},n=0,samples=[];
+  for(var i=0;i<lines.length;i++){
+    var s=lines[i].trim().toUpperCase();
+    if(!s||s===">"||s.indexOf("STOPPED")>=0||s.indexOf("ATMA")===0)continue;
+    if(/^[0-9A-F]{3}([ ]|$|[0-9A-F])/.test(s)){ ids[s.slice(0,3)]=1; n++; if(samples.length<8)samples.push(s); }
+  }
+  return {n:n,ids:Object.keys(ids),samples:samples};
+}
+async function runScan(){
+  if(!T.connected){toast("нет соединения — подключите адаптер");return;}
+  setBusy(true);
+  var rows=document.querySelectorAll("#scanList .cmdrow");
+  rows.forEach(function(r){r.classList.remove("ok","fail","run");r.querySelector(".st").textContent="·";r.querySelector(".cdesc").textContent="—";});
+  $("#scanLog").textContent="";
+  var slog=function(t){var el=$("#scanLog");el.textContent+=t+"\n";el.scrollTop=el.scrollHeight;};
+  try{
+    // настройки адаптера (не передаются в CAN): эхо, заголовки — чтобы видеть ID
+    await command("ATE0",1500);await command("ATL0",1500);await command("ATH1",1500);
+    for(var i=0;i<SCAN.length;i++){
+      var it=SCAN[i],row=rows[i];
+      row.classList.add("run");row.querySelector(".st").textContent=">";
+      slog("── "+it.name+" ──");
+      try{
+        var unsupported=false;
+        for(var j=0;j<it.setup.length;j++){
+          var r=await command(it.setup[j],1800);
+          if(/(\?|UNABLE|ERROR)/i.test(r)&&!/OK/i.test(r)){ unsupported=true; break; }
+        }
+        if(unsupported){ row.classList.remove("run");row.classList.add("fail");
+          row.querySelector(".st").textContent="×";row.querySelector(".cdesc").textContent="не поддерживается";
+          slog("  не поддерживается адаптером"); continue; }
+        var txt=await monitor(2200);
+        var f=parseFrames(txt);
+        row.classList.remove("run");
+        if(f.n>0){ row.classList.add("ok");row.querySelector(".st").textContent="✓";
+          row.querySelector(".cdesc").textContent=f.n+" кадр. · ID "+f.ids.slice(0,4).join(",");
+          slog("  ТРАФИК: "+f.n+" кадров, ID: "+f.ids.join(","));
+          f.samples.slice(0,4).forEach(function(s){slog("    "+s);});
+        }else{ row.querySelector(".st").textContent="—";row.querySelector(".cdesc").textContent="тихо";
+          slog("  тихо (нет кадров)"); }
+      }catch(e){ row.classList.remove("run");row.classList.add("fail");
+        row.querySelector(".st").textContent="×";row.querySelector(".cdesc").textContent=e.message.slice(0,38);
+        slog("  ошибка: "+e.message); }
+    }
+    try{await closeProto();}catch(_){}
+    slog("── готово. Живая шина = где «ТРАФИК». На ней ищи ГУ (вкладка «Команды»). ──");
+  }catch(e){ slog("СТОП: "+e.message); }
+  finally{ setBusy(false); }
+}
+
 function switchView(v){
-  ["term","cmds","card"].forEach(function(name){
+  ["term","cmds","scan","card"].forEach(function(name){
     var el=$("#view-"+name);if(el)el.classList.toggle("hidden",name!==v);
   });
   document.querySelectorAll(".tab").forEach(function(t){t.classList.toggle("on",t.getAttribute("data-view")===v);});
@@ -868,6 +966,12 @@ $("#cmdAll").addEventListener("click",function(){document.querySelectorAll("#cmd
 $("#cmdNone").addEventListener("click",function(){document.querySelectorAll("#cmdList input").forEach(function(i){i.checked=false;});});
 $("#cmdSend").addEventListener("click",sendChecked);
 
+/* ---- вкладка «Скан» ---- */
+buildScan();
+$("#scanRun").addEventListener("click",runScan);
+document.querySelectorAll(".pUsb").forEach(function(b){b.addEventListener("click",function(){connectSerial(0);});});
+document.querySelectorAll(".pBle").forEach(function(b){b.addEventListener("click",function(){connectBle("");});});
+
 /* ---- theme ---- */
 (function(){
   var root=document.documentElement,btn=$("#theme");
@@ -880,6 +984,7 @@ $("#cmdSend").addEventListener("click",sendChecked);
 /* ---- banner ---- */
 logLine("","bz3x · elm terminal — Web Serial / Web Bluetooth","kv");
 logLine("","вкладка «Команды»: чеклист (ATE0…ATSTFF, ATTP6=HS, VIN, меню/ADB) → отправить в терминал.","kv");
+logLine("","вкладка «Скан»: пассивно слушает MS/HS на разных скоростях (ATMA), ищет живую шину. Не передаёт.","kv");
 logLine("","наберите /help. подключение: /connect (USB/BT-SPP) или /ble (BLE).","kv");
 if(!("serial" in navigator))logLine("×","этот браузер без Web Serial — нужен Chrome/Edge, HTTPS или file://","err");
 setFoot();
