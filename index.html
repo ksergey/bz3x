@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
 <title>bz3x · elm terminal</title>
 <style>
@@ -24,7 +24,9 @@
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--fg);
     font:13.5px/1.5 ui-monospace,"JetBrains Mono","SFMono-Regular",Menlo,Consolas,monospace}
-  .app{display:flex;flex-direction:column;height:100vh;max-width:980px;margin:0 auto;padding:10px}
+  .app{display:flex;flex-direction:column;height:100vh;height:100dvh;max-width:980px;margin:0 auto;
+       padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom));
+       padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
   /* header */
   .head{display:flex;align-items:center;gap:10px;padding:4px 8px 8px}
   .brand{font-weight:700;letter-spacing:.5px}
@@ -35,13 +37,14 @@
   .dot{width:7px;height:7px;border-radius:50%;background:var(--faint)}
   .pill.on .dot{background:var(--ok)} .pill.on{color:var(--fg)}
   .pill.err .dot{background:var(--err)} .pill.err{color:var(--err)}
-  .iconbtn{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);
-    background:var(--panel);color:var(--fg);cursor:pointer;font-size:14px;line-height:1}
+  .iconbtn{width:38px;height:38px;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel);color:var(--fg);cursor:pointer;font-size:15px;line-height:1;touch-action:manipulation}
   .iconbtn:hover{border-color:var(--accent)}
   /* main log */
   .screen{flex:1;min-height:0;border:1px solid var(--line);border-radius:9px;background:var(--panel);
     display:flex;flex-direction:column;overflow:hidden}
-  .log{flex:1;min-height:0;overflow:auto;padding:12px 14px;white-space:pre-wrap;word-break:break-word}
+  .log{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+       padding:12px 14px;white-space:pre-wrap;word-break:break-word}
   .ln{display:block}
   .g{color:var(--faint)}            /* gutter glyph + time */
   .tx{color:var(--tx)} .rx{color:var(--rx)} .note{color:var(--note)}
@@ -54,11 +57,22 @@
   .keybar .send{margin-left:auto;cursor:pointer;color:var(--dim)}
   .keybar .send b{color:var(--accent)}
   /* input */
-  .inputwrap{display:flex;align-items:center;gap:8px;margin-top:8px;padding:9px 12px;
+  /* быстрые кнопки для телефона */
+  .chips{display:flex;gap:7px;margin-top:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    padding-bottom:2px;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:0 0 auto;min-height:40px;padding:0 13px;border-radius:9px;border:1px solid var(--btn-line,var(--line));
+    background:var(--panel);color:var(--fg);font:inherit;font-size:13px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;touch-action:manipulation}
+  .chip:hover{border-color:var(--accent)} .chip:active{background:var(--panel2)}
+  .chip.go{border-color:var(--accent);color:var(--accent)}
+  .chip.run{border-color:var(--err);color:var(--err)}
+  .inputwrap{display:flex;align-items:center;gap:8px;margin-top:8px;padding:11px 12px;
     border:1px solid var(--line);border-radius:9px;background:var(--panel)}
   .inputwrap:focus-within{border-color:var(--accent)}
   .prompt{color:var(--accent);font-weight:700}
-  #cmd{flex:1;background:transparent;border:0;outline:0;color:var(--fg);font:inherit}
+  #cmd{flex:1;background:transparent;border:0;outline:0;color:var(--fg);
+    font-family:inherit;font-size:16px}  /* 16px — чтобы iOS не зумил при фокусе */
   #cmd::placeholder{color:var(--faint)}
   /* footer status line */
   .foot{display:flex;align-items:center;gap:14px;padding:7px 10px 2px;color:var(--dim);font-size:12px;flex-wrap:wrap}
@@ -66,7 +80,8 @@
   .foot .seg b{color:var(--fg);font-weight:600}
   .foot .armed{color:var(--err);font-weight:700}
   .foot .sp{flex:1}
-  .foot a{color:var(--accent2);text-decoration:none;cursor:pointer}
+  .foot a{color:var(--accent2);text-decoration:none;cursor:pointer;display:inline-block;
+    padding:7px 6px;touch-action:manipulation}
   .foot a:hover{text-decoration:underline}
   /* шпаргалка (overlay) */
   .sheet{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.55);
@@ -77,25 +92,37 @@
     display:flex;flex-direction:column;max-height:100vh}
   .sheethead{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
   .sheethead b{font-weight:700} .sheethead .d{color:var(--dim);font-size:12px}
-  .sheethead .x{margin-left:auto;width:30px;height:30px;border-radius:7px;border:1px solid var(--line);
-    background:var(--panel);color:var(--fg);cursor:pointer;font-size:14px}
+  .sheethead .x{margin-left:auto;width:40px;height:40px;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel);color:var(--fg);cursor:pointer;font-size:16px;touch-action:manipulation}
   .sheethead .x:hover{border-color:var(--accent)}
-  .sheetbody{overflow:auto;padding:12px 14px 28px}
+  .sheetbody{overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+    padding:12px 14px calc(28px + env(safe-area-inset-bottom))}
   .grp{margin:0 0 16px}
   .grphead{display:flex;align-items:center;gap:10px;margin:14px 2px 7px}
   .grphead h2{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);font-weight:600}
-  .grphead .copyall{margin-left:auto;font-size:11px;color:var(--accent2);background:none;border:0;cursor:pointer}
+  .grphead .copyall{margin-left:auto;font-size:12px;color:var(--accent2);background:none;border:0;
+    cursor:pointer;padding:7px 4px;touch-action:manipulation}
   .grphead .copyall:hover{text-decoration:underline}
   .cmds{border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel)}
-  .crow{display:flex;gap:10px;align-items:baseline;padding:8px 11px;border-bottom:1px solid var(--line)}
+  .crow{display:flex;gap:10px;align-items:center;min-height:46px;padding:9px 12px;
+    border-bottom:1px solid var(--line);touch-action:manipulation}
   .crow:last-child{border-bottom:0}
-  .crow:hover{background:var(--panel2)}
+  .crow:hover{background:var(--panel2)} .crow:active{background:var(--panel2)}
   .crow .c{font-weight:600;color:var(--fg);cursor:pointer;white-space:nowrap}
   .crow .c:hover{color:var(--accent)}
   .crow.hot .c{color:var(--note)}
   .crow .e{margin-left:auto;text-align:right;color:var(--faint);font-size:12px}
   .sheetnote{color:var(--dim);font-size:12px;line-height:1.6;margin:8px 2px 0}
   .sheetnote b{color:var(--fg)} .sheetnote code{color:var(--accent)}
+  /* схема OBD-II */
+  .obd{border:1px solid var(--line);border-radius:9px;background:var(--panel);padding:12px;margin:2px 0 6px}
+  .obd svg{width:100%;height:auto;display:block}
+  .obd .pinlbl{fill:var(--dim)}
+  .obdleg{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:12px;color:var(--dim)}
+  .obdleg span{display:inline-flex;align-items:center;gap:6px}
+  .obdleg i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .obdcap{color:var(--dim);font-size:12px;line-height:1.6;margin:10px 2px 0}
+  .obdcap b{color:var(--fg)} .obdcap .ms{color:var(--accent);font-weight:700}
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(16px);z-index:60;
     background:var(--accent);color:#06211b;padding:8px 15px;border-radius:999px;font-size:12px;font-weight:600;
     opacity:0;pointer-events:none;transition:.16s}
@@ -123,10 +150,19 @@
     </div>
   </div>
 
+  <div class="chips">
+    <button class="chip go" id="cUsb">🔌 USB</button>
+    <button class="chip go" id="cBle">📶 BLE</button>
+    <button class="chip" id="cAti">ATI</button>
+    <button class="chip" id="cVin">VIN</button>
+    <button class="chip run" id="cRun">▶ разблокировать</button>
+    <button class="chip" id="cCard">шпаргалка</button>
+  </div>
+
   <div class="inputwrap">
     <span class="prompt">❯</span>
-    <input id="cmd" autocomplete="off" autocapitalize="off" spellcheck="false"
-           placeholder="команда адаптера (ATI, 22F190) или /help">
+    <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+           enterkeyhint="send" placeholder="команда адаптера (ATI, 22F190) или /help">
   </div>
 
   <div class="foot">
@@ -148,6 +184,78 @@
       <button class="x" id="sheetClose" title="закрыть (Esc)">✕</button>
     </div>
     <div class="sheetbody">
+      <div class="grphead"><h2>Где разъём ГУ (bZ3X)</h2></div>
+      <div class="obd">
+        <svg viewBox="0 0 320 152" role="img" aria-label="Разъём ГУ — справа, со стороны пассажира">
+          <line x1="8" y1="134" x2="312" y2="134" stroke="var(--line)" stroke-width="2"/>
+          <path d="M14 30 H306 a6 6 0 0 1 6 6 V52 H8 V36 a6 6 0 0 1 6 -6 Z"
+                fill="var(--panel2)" stroke="var(--line)" stroke-width="1.5"/>
+          <rect x="138" y="14" width="46" height="24" rx="3" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+          <text x="161" y="30" text-anchor="middle" font-size="8" fill="var(--dim)" font-family="ui-monospace,monospace">ГУ</text>
+          <!-- руль слева (LHD) -->
+          <line x1="70" y1="52" x2="70" y2="70" stroke="var(--line)" stroke-width="2"/>
+          <circle cx="70" cy="86" r="18" fill="none" stroke="var(--dim)" stroke-width="3"/>
+          <circle cx="70" cy="86" r="5" fill="var(--dim)"/>
+          <!-- обычный OBD слева под рулём (серый) -->
+          <path d="M46 100 h28 a3 3 0 0 1 3 3 v9 a3 3 0 0 1 -3 3 h-22 a6 6 0 0 1 -6 -6 v-6 a3 3 0 0 1 0 -3 Z" fill="var(--faint)"/>
+          <text x="59" y="129" text-anchor="middle" font-size="8" fill="var(--dim)" font-family="ui-monospace,monospace">обычный</text>
+          <!-- разъём ГУ справа (пассажир, зелёный) + стрелка -->
+          <path d="M236 98 h32 a3 3 0 0 1 3 3 v9 a3 3 0 0 1 -3 3 h-26 a7 7 0 0 1 -7 -7 v-5 a3 3 0 0 1 1 -3 Z" fill="var(--accent)"/>
+          <text x="252" y="129" text-anchor="middle" font-size="8" fill="var(--accent)" font-weight="bold" font-family="ui-monospace,monospace">ГУ · сюда</text>
+          <line x1="252" y1="74" x2="252" y2="90" stroke="var(--accent)" stroke-width="2"/>
+          <path d="M252 95 l-5 -7 h10 Z" fill="var(--accent)"/>
+          <text x="70"  y="149" text-anchor="middle" font-size="8" fill="var(--dim)" font-family="ui-monospace,monospace">водитель</text>
+          <text x="252" y="149" text-anchor="middle" font-size="8" fill="var(--dim)" font-family="ui-monospace,monospace">пассажир →</text>
+        </svg>
+        <p class="obdcap">
+          Рабочий разъём для ГУ — <span class="ms">справа, со стороны пассажира</span>
+          (нижняя часть панели). Слева под рулём — обычный OBD, на нём запрос к ГУ
+          не проходит (<b>CAN ERROR</b>).
+        </p>
+      </div>
+      <div class="grphead"><h2>Проверка по пинам (3 / 11)</h2></div>
+      <div class="obd">
+        <svg viewBox="0 0 320 132" role="img" aria-label="Распиновка OBD-II, пины 3 и 11 — MS-CAN к ГУ">
+          <!-- корпус разъёма -->
+          <path d="M18 24 H302 a8 8 0 0 1 8 8 V84 a8 8 0 0 1 -8 8 H40 a14 14 0 0 1 -14 -14 V24 Z"
+                fill="none" stroke="var(--line)" stroke-width="2"/>
+          <!-- пины: верх 1..8 (y=44), низ 9..16 (y=74) -->
+          <!-- генерируется ниже группами, здесь статично -->
+          <g font-family="ui-monospace,monospace" font-size="9" text-anchor="middle">
+            <!-- top row -->
+            <circle cx="42"  cy="44" r="8" fill="var(--faint)"/><text class="pinlbl" x="42"  y="20">1</text>
+            <circle cx="76"  cy="44" r="8" fill="var(--faint)"/><text class="pinlbl" x="76"  y="20">2</text>
+            <circle cx="110" cy="44" r="9" fill="var(--accent)"/><text x="110" y="20" fill="var(--accent)" font-weight="bold">3</text>
+            <circle cx="144" cy="44" r="8" fill="var(--dim)"/><text class="pinlbl" x="144" y="20">4</text>
+            <circle cx="178" cy="44" r="8" fill="var(--dim)"/><text class="pinlbl" x="178" y="20">5</text>
+            <circle cx="212" cy="44" r="9" fill="var(--accent2)"/><text x="212" y="20" fill="var(--accent2)" font-weight="bold">6</text>
+            <circle cx="246" cy="44" r="8" fill="var(--faint)"/><text class="pinlbl" x="246" y="20">7</text>
+            <circle cx="280" cy="44" r="8" fill="var(--faint)"/><text class="pinlbl" x="280" y="20">8</text>
+            <!-- bottom row -->
+            <circle cx="42"  cy="74" r="8" fill="var(--faint)"/><text class="pinlbl" x="42"  y="108">9</text>
+            <circle cx="76"  cy="74" r="8" fill="var(--faint)"/><text class="pinlbl" x="76"  y="108">10</text>
+            <circle cx="110" cy="74" r="9" fill="var(--accent)"/><text x="110" y="108" fill="var(--accent)" font-weight="bold">11</text>
+            <circle cx="144" cy="74" r="8" fill="var(--faint)"/><text class="pinlbl" x="144" y="108">12</text>
+            <circle cx="178" cy="74" r="8" fill="var(--faint)"/><text class="pinlbl" x="178" y="108">13</text>
+            <circle cx="212" cy="74" r="9" fill="var(--accent2)"/><text x="212" y="108" fill="var(--accent2)" font-weight="bold">14</text>
+            <circle cx="246" cy="74" r="8" fill="var(--dim)"/><text class="pinlbl" x="246" y="108">15</text>
+            <circle cx="280" cy="74" r="9" fill="var(--note)"/><text x="280" y="108" fill="var(--note)" font-weight="bold">16</text>
+          </g>
+        </svg>
+        <div class="obdleg">
+          <span><i style="background:var(--accent)"></i>3 / 11 — MS‑CAN → ГУ</span>
+          <span><i style="background:var(--accent2)"></i>6 / 14 — HS‑CAN</span>
+          <span><i style="background:var(--dim)"></i>4 / 5 — масса</span>
+          <span><i style="background:var(--note)"></i>16 — +12 В</span>
+        </div>
+        <p class="obdcap">
+          На bZ3X два разъёма OBD. Правильный для ГУ — тот, где на пинах <span class="ms">3 и 11</span>
+          заведён MS‑CAN; выбирай <b>по этому, а не по месту</b>. Как проверить:
+          мультиметром — на нужном разъёме между 3/11 и массой (4/5) есть сигнал/разводка,
+          и «живой» <b>+12 В на 16</b>; или просто — на правильном разъёме <code>STP53</code> + <code>22F190</code>
+          проходят, а на неправильном возвращается <b>CAN ERROR</b> (как было у тебя).
+        </p>
+      </div>
       <div id="groups"></div>
       <p class="sheetnote">
         СТОП при <b>?</b> / ERROR / NO DATA / CAN ERROR / BUS ERROR / UNABLE TO CONNECT / <b>7F xx xx</b>.<br>
@@ -579,7 +687,8 @@ var HELP=[
   "  /card             шпаргалка: команды + ожидаемые ответы (клик — в prompt)",
   "  /raw on|off       показывать сырой RX",
   "  /clear            очистить лог",
-  "любой другой ввод уходит в адаптер как есть (ATI, 22F190, 2701 …)"
+  "любой другой ввод уходит в адаптер как есть (ATI, 22F190, 2701 …)",
+  "кнопки сверху — быстрый доступ; распиновка OBD (какой из двух разъёмов) — в /card"
 ];
 function help(){HELP.forEach(function(l){logLine("","  "+l,"kv");});}
 
@@ -674,6 +783,22 @@ $("#cardLink").addEventListener("click",function(e){e.preventDefault();openSheet
 $("#sheetClose").addEventListener("click",closeSheet);
 $("#sheet").addEventListener("click",function(e){if(e.target===this)closeSheet();});
 document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("#sheet").classList.contains("on"))closeSheet();});
+
+/* ---- быстрые кнопки (телефон) ---- */
+$("#cUsb").addEventListener("click",function(){connectSerial(0);});
+$("#cBle").addEventListener("click",function(){connectBle("");});
+$("#cAti").addEventListener("click",async function(){
+  if(!T.connected){toast("нет соединения");return;}
+  try{logLine("✓",await atIdentity(),"ok");}catch(e){logLine("✗",e.message,"err");}
+});
+$("#cVin").addEventListener("click",function(){ if(!T.connected){toast("нет соединения");return;} readVin(); });
+$("#cRun").addEventListener("click",function(){
+  if(!T.connected){toast("нет соединения");return;}
+  if(confirm("Запустить разблокировку инженерного меню?\nТолько своя машина, селектор в P, мультимедиа включена.")){
+    T.armed=true;setFoot();runSequence();
+  }
+});
+$("#cCard").addEventListener("click",openSheet);
 
 /* ---- theme ---- */
 (function(){
