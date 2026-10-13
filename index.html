@@ -68,6 +68,32 @@
   .chip:hover{border-color:var(--accent)} .chip:active{background:var(--panel2)}
   .chip.go{border-color:var(--accent);color:var(--accent)}
   .chip.run{border-color:var(--err);color:var(--err)}
+  /* вкладки + панели процедуры */
+  .tabs{display:flex;gap:6px;margin:2px 0 8px}
+  .tab{flex:1;min-height:38px;padding:0 8px;border:1px solid var(--line);border-radius:8px;
+    background:var(--panel);color:var(--dim);font:inherit;font-size:13px;cursor:pointer;touch-action:manipulation}
+  .tab.on{color:var(--fg);border-color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent)}
+  .view{flex:1;min-height:0;display:flex;flex-direction:column}
+  .view.hidden{display:none}
+  .proc{flex:1;min-height:0;display:flex;flex-direction:column;border:1px solid var(--line);
+    border-radius:9px;background:var(--panel);overflow:hidden}
+  .prochead{padding:10px 12px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.5}
+  .prochead b{color:var(--fg)}
+  .procbar{display:flex;gap:7px;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .steps{list-style:none;margin:0;padding:8px 12px;border-bottom:1px solid var(--line);
+    overflow-y:auto;-webkit-overflow-scrolling:touch;flex:0 0 auto;max-height:38vh}
+  .steps li{display:flex;gap:9px;align-items:baseline;padding:4px 0;font-size:13px}
+  .steps .st{width:15px;flex:0 0 auto;text-align:center;color:var(--faint)}
+  .steps .lb{color:var(--dim)} .steps .dt{margin-left:auto;text-align:right;color:var(--faint);
+    font-size:11.5px;max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .steps li.run .st{color:var(--accent2)} .steps li.run .lb{color:var(--fg)}
+  .steps li.ok .st{color:var(--ok)} .steps li.ok .lb{color:var(--fg)}
+  .steps li.fail .st{color:var(--err)} .steps li.fail .lb{color:var(--err)}
+  .verdict{padding:10px 12px;font-size:13px;font-weight:600;border-bottom:1px solid var(--line);
+    display:none;line-height:1.5;word-break:break-word}
+  .verdict.pass{color:var(--ok);display:block} .verdict.fail{color:var(--err);display:block}
+  .plog{flex:1;min-height:0;margin:0;padding:10px 12px;overflow:auto;-webkit-overflow-scrolling:touch;
+    white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.5;background:var(--panel2)}
   .inputwrap{display:flex;align-items:center;gap:8px;margin-top:8px;padding:11px 12px;
     border:1px solid var(--line);border-radius:9px;background:var(--panel)}
   .inputwrap:focus-within{border-color:var(--accent)}
@@ -145,28 +171,67 @@
     <button id="theme" class="iconbtn" title="тема">🌙</button>
   </div>
 
-  <div class="screen">
-    <div id="log" class="log"></div>
-    <div class="keybar">
-      <span>seed <span id="seedv" class="seed">— — — —</span></span>
-      <span>key <span id="keyv" class="key">— — — —</span></span>
-      <span id="sendline" class="send" title="клик — скопировать">2702<b>________</b></span>
+  <div class="tabs">
+    <button class="tab on" data-view="term">Терминал</button>
+    <button class="tab" data-view="hs">HS-CAN</button>
+    <button class="tab" data-view="ms">MS-CAN</button>
+  </div>
+
+  <div id="view-term" class="view">
+    <div class="screen">
+      <div id="log" class="log"></div>
+      <div class="keybar">
+        <span>seed <span id="seedv" class="seed">— — — —</span></span>
+        <span>key <span id="keyv" class="key">— — — —</span></span>
+        <span id="sendline" class="send" title="клик — скопировать">2702<b>________</b></span>
+      </div>
+    </div>
+
+    <div class="chips">
+      <button class="chip go" id="cUsb">🔌 USB</button>
+      <button class="chip go" id="cBle">📶 BLE</button>
+      <button class="chip" id="cAti">ATI</button>
+      <button class="chip" id="cVin">VIN</button>
+      <button class="chip run" id="cRun">> разблокировать</button>
+      <button class="chip" id="cBus">шина: MS</button>
+      <button class="chip" id="cCard">шпаргалка</button>
+    </div>
+
+    <div class="inputwrap">
+      <span class="prompt">❯</span>
+      <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+             enterkeyhint="send" placeholder="команда адаптера (ATI, 22F190) или /help">
     </div>
   </div>
 
-  <div class="chips">
-    <button class="chip go" id="cUsb">🔌 USB</button>
-    <button class="chip go" id="cBle">📶 BLE</button>
-    <button class="chip" id="cAti">ATI</button>
-    <button class="chip" id="cVin">VIN</button>
-    <button class="chip run" id="cRun">> разблокировать</button>
-    <button class="chip" id="cCard">шпаргалка</button>
+  <div id="view-hs" class="view hidden">
+    <div class="proc">
+      <div class="prochead">Процедура · <b>HS-CAN 500k</b> — ATTP6, пины 6/14 (как bz3x-menu.exe).
+        Переключатель кабеля HS/MS — в HS.</div>
+      <div class="procbar">
+        <button class="chip go pUsb">🔌 USB</button>
+        <button class="chip go pBle">📶 BLE</button>
+        <button class="chip run" id="runHs">> выполнить процедуру</button>
+      </div>
+      <ol class="steps" id="stepsHs"></ol>
+      <div class="verdict" id="verdictHs"></div>
+      <pre class="plog" id="plogHs"></pre>
+    </div>
   </div>
 
-  <div class="inputwrap">
-    <span class="prompt">❯</span>
-    <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
-           enterkeyhint="send" placeholder="команда адаптера (ATI, 22F190) или /help">
+  <div id="view-ms" class="view hidden">
+    <div class="proc">
+      <div class="prochead">Процедура · <b>MS-CAN 125k</b> — STP53, пины 3/11 (пассажирский разъём).
+        Нужен STN-адаптер (vLinker MC+/OBDLink).</div>
+      <div class="procbar">
+        <button class="chip go pUsb">🔌 USB</button>
+        <button class="chip go pBle">📶 BLE</button>
+        <button class="chip run" id="runMs">> выполнить процедуру</button>
+      </div>
+      <ol class="steps" id="stepsMs"></ol>
+      <div class="verdict" id="verdictMs"></div>
+      <pre class="plog" id="plogMs"></pre>
+    </div>
   </div>
 
   <div class="foot">
@@ -174,6 +239,7 @@
     <span class="seg">baud <b id="fBaud">—</b></span>
     <span class="seg">bus <b id="fBus">—</b></span>
     <span id="fArm" class="seg"></span>
+    <span id="fLock" class="seg"></span>
     <span class="sp"></span>
     <span class="seg"><a id="cardLink">шпаргалка</a></span>
     <span class="seg"><a href="terminal-classic.html">classic</a></span>
@@ -253,7 +319,7 @@ var INIT_POST=["ATAL","ATV0","ATSH72B","ATCRA7AB","ATFCSH72B","ATFCSD300014",
 var REQ_VERSION="8789CVN020  S.242";
 var AUTOBAUD=[38400,115200,9600,57600];
 
-var T={kind:null,connected:false,buf:"",lastData:0,debug:false,bus:null,busPref:"ms",
+var T={kind:null,connected:false,buf:"",lastData:0,debug:false,bus:null,busPref:"ms",authPending:false,
   port:null,writer:null,reader:null,bleDev:null,bleWrite:null,bleNotify:null,
   adapter:"—",baud:"—",armed:false,keepAlive:false,_kaBusy:false};
 
@@ -261,8 +327,9 @@ function norm(s){return String(s).replace(/\s+/g,"").toUpperCase();}
 function hasError(txt){var u=norm(txt);for(var i=0;i<ERROR_MARKERS.length;i++){if(u.indexOf(ERROR_MARKERS[i])>=0)return ERROR_MARKERS[i];}return "";}
 function esc(s){return String(s).replace(/\r/g,"\\r").replace(/\n/g,"\\n");}
 
+var activeLog=null;  // куда писать лог: терминал (#log) или панель процедуры
 function logLine(glyph,text,cls){
-  var el=$("#log");
+  var el=activeLog||document.getElementById("log");
   var ts=new Date().toLocaleTimeString();
   var line=document.createElement("span");
   line.className="ln "+(cls||"");
@@ -420,9 +487,10 @@ function stopKeepAlive(){T.keepAlive=false;if(T._ka){clearInterval(T._ka);T._ka=
 async function runSequence(){
   if(!T.connected){logLine("×","нет соединения — /connect или /ble","err");return;}
   if(!T.armed){logLine("×","последовательность обходит штатный security-access IHU. Только своя машина, селектор в P, мультимедиа включена. Подтверди: /run yes","err");return;}
+  if(T.authPending){logLine("×","ЗАБЛОКИРОВАНО (auth-pending): предыдущая авторизация не завершилась — «"+T.authPending+"». Повтор ключа блокируется. Разбери причину, затем /authreset","err");return;}
   setBusy(true);
   logLine("▌","==== СТАРТ ====","note");
-  var entered=false;
+  var entered=false,keyPhase=false;
   try{
     logLine("—","инициализация (AT + выбор шины)","note");
     for(var i=0;i<INIT_PRE.length;i++)await at(INIT_PRE[i]);
@@ -457,12 +525,14 @@ async function runSequence(){
     logLine("✓","key : "+key,"ok");
 
     logLine("—","2702 — отправка ключа","note");
+    keyPhase=true;                           // с этого момента сбой → auth-pending lock
     await uds("2702"+key,"6702",{atpc:false});
     logLine("✓","security-access разблокирован","ok");
 
     logLine("—","31012B00 — открытие инженерного меню","note");
     await uds("31012B00","71012B00",{atpc:false});
     logLine("✓","[OK] меню должно открыться — проверь экран мультимедиа","ok");
+    keyPhase=false;                          // авторизация прошла, блок не нужен
 
     stopKeepAlive();
     logLine("—","1001 — default session","note");
@@ -470,6 +540,7 @@ async function runSequence(){
     logLine("▌","==== ГОТОВО ====","ok");
   }catch(e){
     logLine("×","СТОП: "+e.message,"err");
+    if(keyPhase)setAuthPending(e.message);   // ключ отклонён или ответ потерян → блок
   }finally{
     stopKeepAlive();
     try{ if(entered)await uds("1001","",{atpc:false,timeout:1500}); }catch(_){}
@@ -594,13 +665,143 @@ async function teardown(fromUI){
    UI state
    ============================================================ */
 function setConn(msg,cls){var p=$("#conn");$("#connTxt").textContent=msg;p.className="pill"+(cls?" "+cls:"");}
-function setBusy(b){$("#cmd").disabled=b;}
+function setBusy(b){$("#cmd").disabled=b;["#runHs","#runMs","#cRun"].forEach(function(id){var e=$(id);if(e)e.disabled=b;});}
+
+/* ============================================================
+   процедуры во вкладках HS-CAN / MS-CAN (как bz3x-menu.exe),
+   с пошаговым статусом и валидацией ответов адаптера
+   ============================================================ */
+var STEP_DEFS=[
+  ["init","инициализация адаптера"],
+  ["bus","выбор шины"],
+  ["ident","связь с адаптером (ATI)"],
+  ["vin","VIN (22F190)"],
+  ["ver","версия ПО (22F189 = S.242)"],
+  ["sess","extended session (1003)"],
+  ["seed","seed (2701)"],
+  ["key","ключ (2702)"],
+  ["open","открытие меню (31012B00)"],
+  ["restore","возврат сессии (1001)"]
+];
+function buildSteps(listId,busLabel){
+  var ol=$("#"+listId);ol.innerHTML="";
+  STEP_DEFS.forEach(function(d){
+    var li=document.createElement("li");li.className="pend";li.setAttribute("data-k",d[0]);
+    var st=document.createElement("span");st.className="st";st.textContent="·";
+    var lb=document.createElement("span");lb.className="lb";lb.textContent=(d[0]==="bus"?busLabel:d[1]);
+    var dt=document.createElement("span");dt.className="dt";
+    li.appendChild(st);li.appendChild(lb);li.appendChild(dt);ol.appendChild(li);
+  });
+}
+function pstep(listId,key,status,detail){
+  var li=$("#"+listId+' li[data-k="'+key+'"]');if(!li)return;
+  li.className=status;
+  li.querySelector(".st").textContent={pend:"·",run:">",ok:"✓",fail:"×"}[status]||"·";
+  if(detail!=null)li.querySelector(".dt").textContent=detail;
+}
+function failRunning(listId,msg){
+  var li=$("#"+listId+" li.run");if(li){li.className="fail";li.querySelector(".st").textContent="×";
+    li.querySelector(".dt").textContent=(msg||"").slice(0,40);}
+}
+async function runProcedure(busPref){
+  if(!T.connected){toast("нет соединения — подключите адаптер");return;}
+  if(T.authPending){logLine("×","ЗАБЛОКИРОВАНО (auth-pending): «"+T.authPending+"». Сними блок: /authreset","err");
+    toast("auth-pending: /authreset");return;}
+  if(!confirm("Выполнить процедуру открытия меню по "+busPref.toUpperCase()+"-CAN?\nТолько своя машина, селектор в P, мультимедиа включена."))return;
+  T.armed=true;setFoot();
+  var L=(busPref==="hs")?"Hs":"Ms", stepsId="steps"+L, plog=$("#plog"+L), verdict=$("#verdict"+L);
+  buildSteps(stepsId, busPref==="ms"?"шина MS-CAN (STP53, 3/11)":"шина HS-CAN (ATTP6, 6/14)");
+  plog.textContent="";verdict.className="verdict";verdict.textContent="";
+  var prev=activeLog;activeLog=plog;setBusy(true);
+  var keyPhase=false,R={bus:null,vin:null,ver:null,seed:null,key:null};
+  var m=function(k,s,d){pstep(stepsId,k,s,d);};
+  logLine("▌","==== ПРОЦЕДУРА "+busPref.toUpperCase()+"-CAN ====","note");
+  try{
+    m("init","run");for(var i=0;i<INIT_PRE.length;i++)await at(INIT_PRE[i]);m("init","ok");
+
+    m("bus","run");await setupBus(busPref==="ms");
+    if(busPref==="ms"){
+      var br=norm((await command("STPBRR",1500)).replace(/>/g,""));
+      R.bus="MS-CAN "+br;
+      if(br.indexOf("125000")<0)throw new Abort("шина MS-CAN: ожидался битрейт 125000, адаптер вернул «"+br+"»");
+    }else{ R.bus="HS-CAN 500k (ATTP6)"; }
+    m("bus","ok",R.bus);
+
+    m("ident","run");var id=await atIdentity();m("ident","ok",id);
+
+    m("vin","run");var vinP;
+    try{ vinP=await uds("22F190","62F190"); }
+    catch(e){ if(busPref==="ms"&&isBusErr(e))throw new Abort("нет ответа ГУ на MS-CAN ("+e.message+") — проверь пассажирский разъём 3/11"); throw e; }
+    R.vin=asciiFromHex(vinP,6);
+    if(!/^[A-HJ-NPR-Z0-9]{17}$/.test(R.vin))throw new Abort("VIN не прошёл формат 17 символов: «"+R.vin+"»");
+    m("vin","ok",R.vin);
+
+    m("ver","run");R.ver=asciiFromHex(await uds("22F189","62F189"),6);
+    if(R.ver.indexOf(REQ_VERSION)<0&&!T._force)throw new Abort("версия «"+R.ver+"» != "+REQ_VERSION+" — несовместимо (стоп до ключа)");
+    m("ver","ok",R.ver);
+
+    m("sess","run");await uds("1003","5003");startKeepAlive();m("sess","ok","5003");
+
+    m("seed","run");var seedP=await uds("2701","6701");R.seed=seedP.slice(4,12);setSeed(R.seed);m("seed","ok",R.seed);
+    R.key=seed2key(R.seed);
+
+    m("key","run");keyPhase=true;await uds("2702"+R.key,"6702",{atpc:false});m("key","ok",R.key);
+
+    m("open","run");await uds("31012B00","71012B00",{atpc:false});keyPhase=false;m("open","ok","71012B00");
+
+    stopKeepAlive();
+    m("restore","run");await uds("1001","5001");
+    try{await uds("22F186","62F186",{atpc:false,timeout:2000});}catch(_){}
+    try{await command("ATZ",4000);}catch(_){}
+    m("restore","ok");
+
+    verdict.className="verdict pass";
+    verdict.textContent="PASS — меню открыто (71012B00). VIN "+R.vin+" · "+R.bus+" · key "+R.key+". Проверь экран мультимедиа.";
+    logLine("▌","==== PASS ====","ok");
+  }catch(e){
+    failRunning(stepsId,e.message);
+    if(keyPhase)setAuthPending(e.message);
+    stopKeepAlive();
+    verdict.className="verdict fail";
+    verdict.textContent="FAIL — "+e.message;
+    logLine("×","==== FAIL: "+e.message+" ====","err");
+  }finally{
+    stopKeepAlive();
+    try{await closeProto();}catch(_){}
+    T._force=false;activeLog=prev;setBusy(false);
+  }
+}
+function switchView(v){
+  ["term","hs","ms"].forEach(function(name){
+    var el=$("#view-"+name);if(el)el.classList.toggle("hidden",name!==v);
+  });
+  document.querySelectorAll(".tab").forEach(function(t){t.classList.toggle("on",t.getAttribute("data-view")===v);});
+}
 function afterConnect(){$("#cmd").focus();}
 function afterDisconnect(){teardown(true);}
 function setFoot(){
   $("#fAdp").textContent=T.adapter;$("#fBaud").textContent=T.baud;
-  $("#fBus").textContent=T.bus||("pref:"+T.busPref);
+  $("#fBus").textContent=T.bus||("pref:"+T.busPref.toUpperCase());
   $("#fArm").innerHTML=T.armed?'<span class="armed">● ARMED</span>':'';
+  $("#fLock").innerHTML=T.authPending?'<span class="armed">⚠ LOCK</span>':'';
+  var cb=$("#cBus");if(cb)cb.textContent="шина: "+T.busPref.toUpperCase();
+}
+/* ---- auth-pending lockout (как *.auth-pending.txt в bz3x-menu.exe) ---- */
+function setAuthPending(reason){
+  T.authPending=reason||"авторизация не завершилась";
+  try{localStorage.setItem("bz3x-auth-pending",T.authPending);}catch(e){}
+  setFoot();
+  logLine("×","БЛОК: ключ/открытие не подтвердились — повтор авторизации заблокирован. Разбери причину, затем /authreset","err");
+}
+function clearAuthPending(){
+  T.authPending=false;
+  try{localStorage.removeItem("bz3x-auth-pending");}catch(e){}
+  setFoot();logLine("—","блок auth-pending снят","note");
+}
+function loadAuthPending(){
+  try{var v=localStorage.getItem("bz3x-auth-pending");if(v){T.authPending=v;
+    logLine("×","есть незавершённая авторизация (auth-pending): "+v+" — /run заблокирован до /authreset","err");}}catch(e){}
+  setFoot();
 }
 var currentKey=null;
 function setSeed(hex){
@@ -627,6 +828,7 @@ var HELP=[
   "  /bus ms|hs        предпочитаемая шина (MS-CAN 3/11 | HS-CAN 6/14)",
   "  /key <seed8hex>   посчитать ключ seed->key офлайн",
   "  /run [yes|force]  полная последовательность разблокировки меню",
+  "  /authreset        снять блок auth-pending после незавершённой авторизации",
   "  /card             шпаргалка: команды + ожидаемые ответы (клик — в prompt)",
   "  /raw on|off       показывать сырой RX",
   "  /clear            очистить лог",
@@ -649,6 +851,7 @@ async function onCommand(raw){
       case "vin": await readVin();break;
       case "dtc": await readDtc();break;
       case "bus": if(a==="ms"||a==="hs"){T.busPref=a;setFoot();logLine("—","шина по умолчанию: "+a.toUpperCase()+"-CAN","note");}else logLine("×","/bus ms | hs","err");break;
+      case "authreset": clearAuthPending();break;
       case "key": try{var k=seed2key(a||"");setSeed(a);logLine("✓","seed "+(a||"").toUpperCase()+" -> key "+k+"  (2702"+k+")","ok");}catch(e){logLine("×",e.message,"err");}break;
       case "run":
         if(a==="yes"){T.armed=true;setFoot();}
@@ -742,6 +945,19 @@ $("#cRun").addEventListener("click",function(){
   }
 });
 $("#cCard").addEventListener("click",openSheet);
+$("#cBus").addEventListener("click",function(){
+  T.busPref=(T.busPref==="ms")?"hs":"ms";setFoot();
+  logLine("—","шина: "+T.busPref.toUpperCase()+"-CAN "+(T.busPref==="ms"?"(STP53, пины 3/11)":"(ATTP6, пины 6/14 — как bz3x-menu.exe)"),"note");
+});
+
+/* ---- вкладки + процедуры ---- */
+document.querySelectorAll(".tab").forEach(function(t){t.addEventListener("click",function(){switchView(t.getAttribute("data-view"));});});
+$("#runHs").addEventListener("click",function(){runProcedure("hs");});
+$("#runMs").addEventListener("click",function(){runProcedure("ms");});
+document.querySelectorAll(".pUsb").forEach(function(b){b.addEventListener("click",function(){connectSerial(0);});});
+document.querySelectorAll(".pBle").forEach(function(b){b.addEventListener("click",function(){connectBle("");});});
+buildSteps("stepsHs","шина HS-CAN (ATTP6, 6/14)");
+buildSteps("stepsMs","шина MS-CAN (STP53, 3/11)");
 
 /* ---- theme ---- */
 (function(){
@@ -755,8 +971,10 @@ $("#cCard").addEventListener("click",openSheet);
 /* ---- banner ---- */
 logLine("","bz3x · elm terminal — Web Serial / Web Bluetooth","kv");
 logLine("","IHU на MS-CAN (пины 3/11). На bZ3X два разъёма OBD — ГУ отвечает только на одном.","kv");
+logLine("","шина MS-CAN (3/11) по умолчанию; HS-CAN (6/14, как bz3x-menu.exe) — кнопка «шина» или /bus hs.","kv");
 logLine("","наберите /help. подключение: /connect (USB/BT-SPP) или /ble (BLE).","kv");
 if(!("serial" in navigator))logLine("×","этот браузер без Web Serial — нужен Chrome/Edge, HTTPS или file://","err");
+loadAuthPending();
 setFoot();
 </script>
 </body>
