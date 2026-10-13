@@ -246,41 +246,51 @@
 
   <div id="view-adb" class="view hidden">
     <div class="proc">
-      <div class="prochead">ADB · справка (без действий) — что делает <b>bz3x-russian.exe</b></div>
+      <div class="prochead">ADB · справка и команды (без действий). Выполняются с ПК по USB ADB.</div>
       <div class="procinfo">
         <h3>Две фазы</h3>
         <ul>
-          <li><b>1. Включить ADB — по CAN</b> (эта страница умеет): та же авторизация, но рутина
-            <code>3101AE6501</code> (успех <code>7101AE6500</code>) вместо открытия меню
-            <code>31012B00</code>. Включает USB-debugging на ГУ. → вкладка «Процедура», кнопка «включить ADB».</li>
-          <li><b>2. Русификация — по USB ADB</b> (только ПК-инструмент): ноутбук втыкается USB-кабелем
-            в порт мультимедиа, дальше работает вшитый <b>platform-tools 37.0.1</b>.</li>
+          <li><b>1. Включить ADB — по CAN</b> (эта страница умеет): авторизация + рутина
+            <code>3101AE6501</code> (успех <code>7101AE6500</code>). Включает USB-debugging на ГУ.
+            → вкладка «Процедура», кнопка «включить ADB».</li>
+          <li><b>2. Команды — по USB ADB с ПК:</b> ноутбук USB-кабелем в порт мультимедиа, дальше
+            обычный <code>adb</code> (platform-tools). Браузер ADB-протокол по USB не умеет — только ПК.</li>
         </ul>
-        <h3>Что шлётся по ADB (фаза 2)</h3>
-        <p>Смена языка — без root и без <code>setprop</code>:</p>
+
+        <h3>Русский язык (ru-RU)</h3>
         <pre>adb shell app_process … Bz3xVisitHelper locale ru-RU --apply
-adb shell getprop persist.sys.locale      # проверка == ru-RU</pre>
-        <p>Хелпер <code>Bz3xVisitHelper</code> вызывает системный <code>updatePersistentConfiguration</code>
-          с <code>LocaleList ru-RU</code>; результат читается обратно. Пишутся
-          <code>locale-before/after.json</code>.</p>
-        <h3>Перезагрузка (по согласию, команда REBOOT)</h3>
+adb shell getprop persist.sys.locale          # проверка == ru-RU</pre>
+        <p>Вызывает системный <code>updatePersistentConfiguration</code> с <code>LocaleList ru-RU</code>.
+          Это исключение — идёт на уровне <code>shell</code>, root не нужен.</p>
+
+        <h3>Часовой пояс (напр. Europe/Moscow)</h3>
+        <pre>adb shell su -c 'setprop persist.sys.timezone Europe/Moscow'
+adb shell getprop persist.sys.timezone        # проверка
+adb reboot                                    # применится после перезагрузки</pre>
+
+        <h3>TTL (напр. 64)</h3>
+        <pre>adb shell su -c 'echo 64 > /proc/sys/net/ipv4/ip_default_ttl'
+adb shell cat /proc/sys/net/ipv4/ip_default_ttl   # проверка
+# точечно для раздачи (чтобы до оператора дошло 64):
+adb shell su -c 'iptables -t mangle -A POSTROUTING -j TTL --set-ttl 65'</pre>
+
+        <h3>⚠ TTL и часовой пояс требуют root</h3>
+        <p><code>ip_default_ttl</code>, <code>iptables</code> и <code>persist.sys.*</code> пишутся только под root.
+          Обычный ADB даёт <code>shell</code> (uid 2000), не root. Проверка:</p>
+        <pre>adb shell id                 # uid=2000(shell) → root нет
+adb root                     # ошибка = нельзя (серийная сборка)
+adb shell 'su -c id'         # есть su? → root доступен</pre>
+        <p>Без root TTL/таймзона не меняются. Изменения <code>ip_default_ttl</code>/iptables
+          не переживают перезагрузку (нужен boot-скрипт).</p>
+
+        <h3>Перезагрузка</h3>
         <pre>adb reboot                                 # обычный, без recovery/bootloader
-adb shell cat /proc/sys/kernel/random/boot_id   # сверка before/after
 adb shell getprop sys.boot_completed       # ждёт завершения загрузки
-adb wait-for-device                        # возврат ADB (~2 мин)</pre>
-        <h3>Чего НЕ делает по ADB</h3>
-        <ul>
-          <li>не ставит сторонние APK (только свой locale-хелпер через <code>app_process</code>);</li>
-          <li>не пишет <code>setprop</code>/<code>settings</code>, не использует <code>su</code>/root;</li>
-          <li>меняет только системную локаль; настройки маленькой приборки не трогает;</li>
-          <li>ADB после работы сам не выключает.</li>
-        </ul>
+adb wait-for-device                        # возврат ADB</pre>
+
         <h3>Гейты совместимости</h3>
         <p>IHU <code>8789CVN020&nbsp;&nbsp;S.242</code> и Android
-          <code>GTMC_AY5T_AVNT_S0_260501_0514W_R</code> (API30) — иначе стоп. Ключ seed→key и
-          <code>auth-pending</code> lockout — те же, что в menu-тулзе.</p>
-        <p style="color:var(--note)">⚠ По USB ADB из браузера работать нельзя (нет доступа к ADB-протоколу
-          по USB). Эта вкладка — справка; реальную русификацию делает <b>bz3x-russian.exe</b> на ПК.</p>
+          <code>GTMC_AY5T_AVNT_S0_260501_0514W_R</code> (API30).</p>
       </div>
     </div>
   </div>
@@ -715,7 +725,7 @@ function setConn(msg,cls){var p=$("#conn");$("#connTxt").textContent=msg;p.class
 function setBusy(b){$("#cmd").disabled=b;["#runMenu","#runAdb","#cRun"].forEach(function(id){var e=$(id);if(e)e.disabled=b;});}
 
 /* ============================================================
-   вкладка «Процедура» (как bz3x-menu.exe / bz3x-russian.exe):
+   вкладка «Процедура»:
    шина MS/HS переключателем, действие — меню (31012B00) или ADB (3101AE6501),
    пошаговый статус и валидация ответов адаптера
    ============================================================ */
@@ -811,7 +821,7 @@ async function runProcedure(mode){
 
     verdict.className="verdict pass";
     verdict.textContent="PASS — "+ACT.okdt+". VIN "+R.vin+" · "+R.bus+" · key "+R.key+"."
-      +(mode==="adb"?" ADB на ГУ включён; дальше ru-RU/локаль — по USB ADB (нужен bz3x-russian.exe на ПК)."
+      +(mode==="adb"?" ADB на ГУ включён; дальше ru-RU/локаль — по USB ADB с ПК (см. вкладку ADB)."
                     :" Проверь экран мультимедиа.");
     logLine("▌","==== PASS ====","ok");
   }catch(e){
@@ -846,7 +856,7 @@ function setFoot(){
   $("#fLock").innerHTML=T.authPending?'<span class="armed">⚠ LOCK</span>':'';
   var cb=$("#cBus");if(cb)cb.textContent="шина: "+T.busPref.toUpperCase();
 }
-/* ---- auth-pending lockout (как *.auth-pending.txt в bz3x-menu.exe) ---- */
+/* ---- auth-pending lockout: блок повторной авторизации после сбоя ---- */
 function setAuthPending(reason){
   T.authPending=reason||"авторизация не завершилась";
   try{localStorage.setItem("bz3x-auth-pending",T.authPending);}catch(e){}
@@ -1003,7 +1013,7 @@ $("#cRun").addEventListener("click",function(){
 $("#cCard").addEventListener("click",function(){switchView("card");});
 $("#cBus").addEventListener("click",function(){
   setBusPref(T.busPref==="ms"?"hs":"ms");
-  logLine("—","шина: "+T.busPref.toUpperCase()+"-CAN "+(T.busPref==="ms"?"(STP53, пины 3/11)":"(ATTP6, пины 6/14 — как bz3x-menu.exe)"),"note");
+  logLine("—","шина: "+T.busPref.toUpperCase()+"-CAN "+(T.busPref==="ms"?"(STP53, пины 3/11)":"(ATTP6, пины 6/14)"),"note");
 });
 
 /* ---- вкладки + процедура ---- */
@@ -1028,7 +1038,7 @@ setBusPref(T.busPref);
 /* ---- banner ---- */
 logLine("","bz3x · elm terminal — Web Serial / Web Bluetooth","kv");
 logLine("","IHU на MS-CAN (пины 3/11). На bZ3X два разъёма OBD — ГУ отвечает только на одном.","kv");
-logLine("","шина MS-CAN (3/11) по умолчанию; HS-CAN (6/14, как bz3x-menu.exe) — кнопка «шина» или /bus hs.","kv");
+logLine("","шина MS-CAN (3/11) по умолчанию; HS-CAN (6/14) — кнопка «шина» или /bus hs.","kv");
 logLine("","наберите /help. подключение: /connect (USB/BT-SPP) или /ble (BLE).","kv");
 if(!("serial" in navigator))logLine("×","этот браузер без Web Serial — нужен Chrome/Edge, HTTPS или file://","err");
 loadAuthPending();
