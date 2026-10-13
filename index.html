@@ -66,8 +66,41 @@
   .foot .seg b{color:var(--fg);font-weight:600}
   .foot .armed{color:var(--err);font-weight:700}
   .foot .sp{flex:1}
-  .foot a{color:var(--accent2);text-decoration:none}
+  .foot a{color:var(--accent2);text-decoration:none;cursor:pointer}
   .foot a:hover{text-decoration:underline}
+  /* шпаргалка (overlay) */
+  .sheet{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.55);
+    display:none;align-items:stretch;justify-content:center}
+  .sheet.on{display:flex}
+  .sheetbox{width:100%;max-width:820px;margin:0 auto;background:var(--bg);
+    border-left:1px solid var(--line);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;max-height:100vh}
+  .sheethead{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .sheethead b{font-weight:700} .sheethead .d{color:var(--dim);font-size:12px}
+  .sheethead .x{margin-left:auto;width:30px;height:30px;border-radius:7px;border:1px solid var(--line);
+    background:var(--panel);color:var(--fg);cursor:pointer;font-size:14px}
+  .sheethead .x:hover{border-color:var(--accent)}
+  .sheetbody{overflow:auto;padding:12px 14px 28px}
+  .grp{margin:0 0 16px}
+  .grphead{display:flex;align-items:center;gap:10px;margin:14px 2px 7px}
+  .grphead h2{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);font-weight:600}
+  .grphead .copyall{margin-left:auto;font-size:11px;color:var(--accent2);background:none;border:0;cursor:pointer}
+  .grphead .copyall:hover{text-decoration:underline}
+  .cmds{border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel)}
+  .crow{display:flex;gap:10px;align-items:baseline;padding:8px 11px;border-bottom:1px solid var(--line)}
+  .crow:last-child{border-bottom:0}
+  .crow:hover{background:var(--panel2)}
+  .crow .c{font-weight:600;color:var(--fg);cursor:pointer;white-space:nowrap}
+  .crow .c:hover{color:var(--accent)}
+  .crow.hot .c{color:var(--note)}
+  .crow .e{margin-left:auto;text-align:right;color:var(--faint);font-size:12px}
+  .sheetnote{color:var(--dim);font-size:12px;line-height:1.6;margin:8px 2px 0}
+  .sheetnote b{color:var(--fg)} .sheetnote code{color:var(--accent)}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(16px);z-index:60;
+    background:var(--accent);color:#06211b;padding:8px 15px;border-radius:999px;font-size:12px;font-weight:600;
+    opacity:0;pointer-events:none;transition:.16s}
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  html[data-theme="light"] #toast{color:#fff}
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px}
 </style>
@@ -102,11 +135,33 @@
     <span class="seg">bus <b id="fBus">—</b></span>
     <span id="fArm" class="seg"></span>
     <span class="sp"></span>
-    <span class="seg"><a href="card.html">шпаргалка</a></span>
+    <span class="seg"><a id="cardLink">шпаргалка</a></span>
     <span class="seg"><a href="terminal-classic.html">classic</a></span>
     <span class="seg"><a id="helpLink" href="#">/help</a></span>
   </div>
 </div>
+
+<div id="sheet" class="sheet">
+  <div class="sheetbox">
+    <div class="sheethead">
+      <b>шпаргалка</b> <span class="d">клик по команде — вставить в prompt</span>
+      <button class="x" id="sheetClose" title="закрыть (Esc)">✕</button>
+    </div>
+    <div class="sheetbody">
+      <div id="groups"></div>
+      <p class="sheetnote">
+        СТОП при <b>?</b> / ERROR / NO DATA / CAN ERROR / BUS ERROR / UNABLE TO CONNECT / <b>7F xx xx</b>.<br>
+        Версия должна быть <b>8789CVN020&nbsp;&nbsp;S.242</b>, иначе ключ не отправлять.<br>
+        Шина IHU — <b>MS-CAN 125k</b> (<code>STP53</code>, пины OBD <b>3/11</b>).<br>
+        Если на <code>STP53</code> вернулось <b>?</b> — адаптер/прошивка без MS-CAN; запасной
+        вариант — <code>ATTP6</code> / <code>STP33</code> (HS-CAN 500k, пины 6/14).<br>
+        seed→key считается на самой странице (keybar внизу или <code>/key &lt;seed&gt;</code>);
+        строка <code>2702&lt;KEY&gt;</code> подставит текущий ключ.
+      </p>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
 
 <script>
 "use strict";
@@ -521,6 +576,7 @@ var HELP=[
   "  /bus ms|hs        предпочитаемая шина (MS-CAN 3/11 | HS-CAN 6/14)",
   "  /key <seed8hex>   посчитать ключ seed→key офлайн",
   "  /run [yes|force]  полная последовательность разблокировки меню",
+  "  /card             шпаргалка: команды + ожидаемые ответы (клик — в prompt)",
   "  /raw on|off       показывать сырой RX",
   "  /clear            очистить лог",
   "любой другой ввод уходит в адаптер как есть (ATI, 22F190, 2701 …)"
@@ -546,6 +602,7 @@ async function onCommand(raw){
         if(a==="yes"){T.armed=true;setFoot();}
         if(a==="force"){T.armed=true;T._force=true;setFoot();}
         await runSequence();break;
+      case "card": openSheet();break;
       case "raw": T.debug=(a==="on");logLine("—","сырой RX: "+(T.debug?"вкл":"выкл"),"note");break;
       case "clear": $("#log").innerHTML="";break;
       default: logLine("✗","неизвестная команда /"+c+" — /help","err");
@@ -569,6 +626,54 @@ $("#sendline").addEventListener("click",function(){
   if(!currentKey)return;var t="2702"+currentKey;
   if(navigator.clipboard)navigator.clipboard.writeText(t).then(function(){logLine("—","скопировано: "+t,"note");});
 });
+
+/* ---- встроенная шпаргалка ---- */
+var SHEET=[
+ {t:"Проверка шины",c:[
+   ["ATZ","ELM327 v…"],["ATI","ELM327 v2.2"],["STP53","OK — MS-CAN 125k"],
+   ["STPR","53"],["STPRS","ISO 15765, 11-bit, 125k"],["STPBRR","125000"],
+   ["STP33","OK (запас: HS-CAN 500k)"]]},
+ {t:"Инициализация",c:[
+   ["ATE0","OK"],["ATL0","OK"],["ATH1","OK"],["ATS0","OK"],["ATR1","OK"],["ATM0","OK"],
+   ["STPC","OK"],["STP53","OK"],["ATAL","OK"],["ATV0","OK"],
+   ["ATSH72B","OK"],["ATCRA7AB","OK"],["ATFCSH72B","OK"],["ATFCSD300014","OK"],
+   ["ATFCSM1","OK"],["ATCAF1","OK"],["ATCFC1","OK"],["ATAT0","OK"],["ATSTFF","OK"]]},
+ {t:"Обмен",c:[
+   ["ATI","ELM327 v2.2"],["22F190","62F190 + VIN"],["22F189","62F189 + S.242"],
+   ["1003","5003"],["2701","6701 + seed"],["2702<KEY>","6702",1],
+   ["31012B00","71012B00"],["1001","5001"],["22F186","62F186 …"],["ATZ","баннер"]]}
+];
+function execCmd(it){return it[0].indexOf("<KEY>")>=0?("2702"+(currentKey||"")):it[0];}
+function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._h);toast._h=setTimeout(function(){t.classList.remove("on");},1400);}
+function copySheet(text){if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(function(){toast("скопировано");},function(){toast("не удалось");});else toast("буфер недоступен");}
+function insertCmd(cmd){var i=$("#cmd");i.value=cmd;closeSheet();i.focus();}
+function buildSheet(){
+  var host=$("#groups");host.innerHTML="";
+  SHEET.forEach(function(g){
+    var wrap=document.createElement("div");wrap.className="grp";
+    var head=document.createElement("div");head.className="grphead";
+    var h=document.createElement("h2");h.textContent=g.t;head.appendChild(h);
+    var ca=document.createElement("button");ca.className="copyall";ca.textContent="копировать все";
+    ca.addEventListener("click",function(){copySheet(g.c.map(execCmd).join("\n"));});
+    head.appendChild(ca);wrap.appendChild(head);
+    var box=document.createElement("div");box.className="cmds";
+    g.c.forEach(function(it){
+      var row=document.createElement("div");row.className="crow"+(it[2]?" hot":"");
+      var c=document.createElement("span");c.className="c";c.textContent=it[0];
+      c.title="вставить в prompt";c.addEventListener("click",function(){insertCmd(execCmd(it));});
+      var e=document.createElement("span");e.className="e";e.textContent=it[1]||"";
+      row.appendChild(c);row.appendChild(e);box.appendChild(row);
+    });
+    wrap.appendChild(box);host.appendChild(wrap);
+  });
+}
+var _sheetBuilt=false;
+function openSheet(){if(!_sheetBuilt){buildSheet();_sheetBuilt=true;}$("#sheet").classList.add("on");}
+function closeSheet(){$("#sheet").classList.remove("on");}
+$("#cardLink").addEventListener("click",function(e){e.preventDefault();openSheet();});
+$("#sheetClose").addEventListener("click",closeSheet);
+$("#sheet").addEventListener("click",function(e){if(e.target===this)closeSheet();});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("#sheet").classList.contains("on"))closeSheet();});
 
 /* ---- theme ---- */
 (function(){
