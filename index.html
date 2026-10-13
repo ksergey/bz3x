@@ -227,6 +227,7 @@
       <button class="chip" id="cAti">ATI</button>
       <button class="chip" id="cCmds">набор команд</button>
       <button class="chip" id="cCard">шпаргалка</button>
+      <button class="chip" id="cSave">⬇ лог</button>
     </div>
 
     <div class="inputwrap">
@@ -349,9 +350,11 @@ function hasError(txt){var u=norm(txt);for(var i=0;i<ERROR_MARKERS.length;i++){i
 function esc(s){return String(s).replace(/\r/g,"\\r").replace(/\n/g,"\\n");}
 
 var activeLog=null;  // куда писать лог: терминал (#log) или панель процедуры
+var LOG=[];           // текстовый буфер всего обмена для выгрузки
 function logLine(glyph,text,cls){
   var el=activeLog||document.getElementById("log");
   var ts=new Date().toLocaleTimeString();
+  LOG.push((glyph?glyph+" ":"")+"["+ts+"] "+text);
   var line=document.createElement("span");
   line.className="ln "+(cls||"");
   var head=document.createElement("span");head.className="g";
@@ -359,6 +362,17 @@ function logLine(glyph,text,cls){
   line.appendChild(head);
   line.appendChild(document.createTextNode(text));
   el.appendChild(line);el.scrollTop=el.scrollHeight;
+}
+function downloadLog(){
+  if(!LOG.length){toast("лог пуст");return;}
+  var d=new Date(),p=function(n){return String(n).padStart(2,"0");};
+  var name="bz3x-log-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+".txt";
+  var header="bZ3X · лог обмена с адаптером\n"+d.toString()+"\nадаптер: "+T.adapter+"  baud: "+T.baud+"  шина: "+(T.bus||"HS-CAN")+"\n"+("=".repeat(48))+"\n";
+  var blob=new Blob([header+LOG.join("\n")+"\n"],{type:"text/plain;charset=utf-8"});
+  var url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},0);
+  toast("лог сохранён: "+name);
 }
 function feed(text){T.buf+=text;T.lastData=Date.now();if(T.debug)logLine("·",esc(text),"raw");}
 
@@ -812,6 +826,7 @@ var HELP=[
   "  /key <seed8hex>   посчитать ключ seed->key офлайн",
   "  /card             шпаргалка (клик по команде — вставить в prompt)",
   "  /raw on|off       показывать сырой RX",
+  "  /log              скачать лог обмена (.txt)",
   "  /clear            очистить лог",
   "любой другой ввод уходит в адаптер как есть (ATI, 22F190, 2701 …)",
   "вкладка «Команды» — чеклист с валидацией: отметь нужное и «отправить в терминал»"
@@ -834,7 +849,8 @@ async function onCommand(raw){
       case "key": try{var k=seed2key(a||"");setSeed(a);logLine("✓","seed "+(a||"").toUpperCase()+" -> key "+k+"  (2702"+k+")","ok");}catch(e){logLine("×",e.message,"err");}break;
       case "card": openSheet();break;
       case "raw": T.debug=(a==="on");logLine("—","сырой RX: "+(T.debug?"вкл":"выкл"),"note");break;
-      case "clear": $("#log").innerHTML="";break;
+      case "clear": $("#log").innerHTML="";LOG=[];break;
+      case "log": downloadLog();break;
       default: logLine("×","неизвестная команда /"+c+" — /help","err");
     }
     return;
@@ -938,6 +954,7 @@ $("#cAti").addEventListener("click",async function(){
 });
 $("#cCard").addEventListener("click",function(){switchView("card");});
 $("#cCmds").addEventListener("click",function(){switchView("cmds");});
+$("#cSave").addEventListener("click",downloadLog);
 
 /* ---- вкладки + набор команд ---- */
 document.querySelectorAll(".tab").forEach(function(t){t.addEventListener("click",function(){switchView(t.getAttribute("data-view"));});});
