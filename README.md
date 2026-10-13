@@ -42,18 +42,6 @@ OBD‑адаптер (ELM327 / STN / vLinker). Шина ГУ — **HS‑CAN**, 5
 - Авто‑baud (38400/115200/9600/57600), сырой RX (`/raw on`), офлайн‑генератор ключа
   seed→key (AES‑128) прямо на странице.
 
-## Публикация на GitHub Pages
-
-1. **Settings → Pages → Build and deployment**
-2. Source: **Deploy from a branch**, Branch: **main** / **/(root)** → **Save**
-3. Через ~1 минуту страница доступна по адресу `https://<username>.github.io/bz3x/`.
-
-Обновление:
-
-```bash
-git add -A && git commit -m "обновление" && git push
-```
-
 ## Оффлайн
 
 `index.html` самодостаточен: скачайте его и откройте в браузере телефона. Генератор ключа,
