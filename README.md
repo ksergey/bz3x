@@ -40,11 +40,11 @@
 
 1. Инициализировать репозиторий и залить файлы:
    ```bash
-   cd bz3x-pages
+   cd bz3x
    git init -b main
    git add -A
    git commit -m "bZ3X commands + key generator + web terminal"
-   gh repo create bz3x-pages --public --source=. --push
+   gh repo create bz3x --public --source=. --push
    ```
    (без `gh`: создать репозиторий на github.com и `git remote add origin … && git push -u origin main`)
 
@@ -59,7 +59,7 @@
    - Branch: **main** / **/(root)** → **Save**
 
 3. Через ~1 минуту страница будет доступна:
-   `https://<username>.github.io/bz3x-pages/`
+   `https://<username>.github.io/bz3x/`
 
 Если репозиторий назвать `<username>.github.io`, адрес будет
 `https://<username>.github.io/`.
