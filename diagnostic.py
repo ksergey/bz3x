@@ -1,6 +1,6 @@
 """Client preflight: adapter channel + read-only IHU VIN. No activation keys.
 
-Восстановлено из BZ3X_Client_Check.exe (diagnostic.py 1.1.0) и доработано для Linux:
+Версия diagnostic.py 1.1.0, доработано для Linux:
 - порты /dev/ttyUSB*, /dev/ttyACM*, /dev/rfcomm*, /dev/serial/by-id/* (на Windows по-прежнему COMn);
 - монопольное открытие порта и понятные ошибки при нехватке прав или занятом порте;
 - инвентаризация устройств через /sys вместо PowerShell;

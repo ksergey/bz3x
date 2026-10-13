@@ -267,22 +267,20 @@
     <div class="proc">
       <div class="prochead">Шпаргалка · клик по команде — вставить в prompt терминала</div>
       <div class="sheetbody" id="cardBody">
-        <div class="grphead"><h2>КАКОЙ РАЗЪЁМ (bZ3X)</h2></div>
+        <div class="grphead"><h2>РАЗЪЁМ OBD (bZ3X)</h2></div>
         <div class="obd">
-          <p class="obdcap">Два OBD-разъёма. Рабочий для ГУ — <span class="ms">СПРАВА, со стороны
-            пассажира</span> (не левый под рулём).</p>
-          <pre class="pins">3/11  MS-CAN -&gt; ГУ  &lt;= этот
-6/14  HS-CAN
+          <p class="obdcap">Работаем по <span class="ms">HS-CAN</span> — стандартные пины OBD-II.</p>
+          <pre class="pins">6/14  HS-CAN -&gt; ГУ
 4/5   GND
 16    +12V</pre>
-          <p class="obdcap">На правильном <code>STP53</code> + <code>22F190</code> проходят;
-            на неправильном — <b>CAN ERROR</b>.</p>
+          <p class="obdcap">На <code>ATTP6</code> + <code>22F190</code> проходят;
+            иначе — <b>NO DATA</b> / <b>CAN ERROR</b>.</p>
         </div>
         <div id="groups"></div>
         <p class="sheetnote">
           СТОП при <b>?</b> / ERROR / NO DATA / CAN ERROR / BUS ERROR / UNABLE TO CONNECT / <b>7F xx xx</b>.<br>
           Версия должна быть <b>8789CVN020&nbsp;&nbsp;S.242</b>, иначе ключ не отправлять.<br>
-          Шина IHU — <b>MS-CAN 125k</b> (<code>STP53</code>, пины OBD <b>3/11</b>).<br>
+          Шина IHU — <b>HS-CAN 500k</b> (<code>ATTP6</code>, пины OBD <b>6/14</b>).<br>
           seed-&gt;key считается на самой странице (keybar в терминале или <code>/key &lt;seed&gt;</code>);
           строка <code>2702&lt;KEY&gt;</code> подставит текущий ключ.
         </p>
@@ -342,7 +340,7 @@ var INIT_POST=["ATAL","ATV0","ATSH72B","ATCRA7AB","ATFCSH72B","ATFCSD300014",
 var REQ_VERSION="8789CVN020  S.242";
 var AUTOBAUD=[38400,115200,9600,57600];
 
-var T={kind:null,connected:false,buf:"",lastData:0,debug:false,bus:null,busPref:"ms",authPending:false,
+var T={kind:null,connected:false,buf:"",lastData:0,debug:false,bus:null,authPending:false,
   port:null,writer:null,reader:null,bleDev:null,bleWrite:null,bleNotify:null,
   adapter:"—",baud:"—",armed:false,keepAlive:false,_kaBusy:false};
 
@@ -470,27 +468,14 @@ function asciiFromHex(hex,prefixHexLen){
     return String.fromCharCode.apply(null,raw).replace(/\u0000+$/,"").trim();}catch(e){return "";}
 }
 
-/* ---- bus select: IHU = MS-CAN (STP53, пины 3/11); откат HS-CAN (ATTP6, 6/14) ---- */
+/* ---- bus: IHU = HS-CAN 500k (ATTP6, пины 6/14) ---- */
 function isBusErr(e){var m=norm((e&&e.message)||"");return /CANERROR|BUSERROR|BUSINIT|NODATA|UNABLETOCONNECT/.test(m);}
-async function setupBus(tryMs){
-  if(tryMs){
-    try{
-      await at("STPC");await at("STP53");
-      T.bus="MS-CAN";setFoot();
-      logLine("✓","шина: MS-CAN — STP53 (пины 3/11)","ok");
-      try{var r=await command("STPBRR",1500);logLine("—","битрейт шины (STPBRR): "+esc(r).replace(/[\r>]/g," ").trim(),"note");}catch(_){}
-    }catch(e){
-      logLine("×","STP53 недоступен ("+e.message+") — адаптер без MS-CAN, откат на HS-CAN","err");
-      await at("ATPC");await at("ATTP6");T.bus="HS-CAN";setFoot();
-      logLine("—","шина: HS-CAN 500k — ATTP6 (пины 6/14)","note");
-    }
-  }else{
-    await at("ATPC");await at("ATTP6");T.bus="HS-CAN";setFoot();
-    logLine("—","шина: HS-CAN 500k — ATTP6 (пины 6/14)","note");
-  }
+async function setupBus(){
+  await at("ATPC");await at("ATTP6");T.bus="HS-CAN";setFoot();
+  logLine("—","шина: HS-CAN 500k — ATTP6 (пины 6/14)","note");
   for(var i=0;i<INIT_POST.length;i++)await at(INIT_POST[i]);
 }
-async function closeProto(){try{await _rawCommand(T.bus==="MS-CAN"?"STPC":"ATPC",1500);}catch(e){}}
+async function closeProto(){try{await _rawCommand("ATPC",1500);}catch(e){}}
 
 /* ---- TesterPresent keepalive (fix: сессия не отваливается между шагами) ---- */
 function startKeepAlive(){
@@ -509,7 +494,7 @@ async function readVin(){
   try{
     setBusy(true);
     for(var i=0;i<INIT_PRE.length;i++)await at(INIT_PRE[i]);
-    await setupBus(T.busPref==="ms");
+    await setupBus();
     var p=await uds("22F190","62F190");
     logLine("✓","VIN: "+asciiFromHex(p,6),"ok");
   }catch(e){logLine("×",e.message,"err");}finally{try{await closeProto();}catch(_){ } setBusy(false);}
@@ -518,7 +503,7 @@ async function readDtc(){
   try{
     setBusy(true);
     for(var i=0;i<INIT_PRE.length;i++)await at(INIT_PRE[i]);
-    await setupBus(T.busPref==="ms");
+    await setupBus();
     var p=await uds("1902FF","5902");
     logLine("✓","DTC (19 02): "+p,"ok");
   }catch(e){logLine("×",e.message,"err");}finally{try{await closeProto();}catch(_){ } setBusy(false);}
@@ -712,8 +697,6 @@ async function sendChecked(){
    вкладка «Скан»: пассивный поиск шины через ATMA (без передачи)
    ============================================================ */
 var SCAN=[
-  {name:"MS-CAN  3/11 @ 125k", setup:["STPC","STP53"]},
-  {name:"MS-CAN  3/11 @ 95.2k", setup:["STPC","STP53","STPBR95238"]},
   {name:"HS-CAN  6/14 @ 500k", setup:["STPC","STP33"]},
   {name:"HS-CAN  6/14 @ 250k", setup:["STPC","STP33","STPBR250000"]},
   {name:"HS-CAN  6/14 @ 125k", setup:["STPC","STP33","STPBR125000"]}
@@ -801,7 +784,7 @@ function afterConnect(){$("#cmd").focus();}
 function afterDisconnect(){teardown(true);}
 function setFoot(){
   $("#fAdp").textContent=T.adapter;$("#fBaud").textContent=T.baud;
-  $("#fBus").textContent=T.bus||("pref:"+T.busPref.toUpperCase());
+  $("#fBus").textContent=T.bus||"HS-CAN";
 }
 
 var currentKey=null;
@@ -826,7 +809,6 @@ var HELP=[
   "  /ati              проверить связь (ATI)",
   "  /vin              прочитать VIN (read-only)",
   "  /dtc              прочитать коды (19 02, read-only)",
-  "  /bus ms|hs        предпочитаемая шина (MS-CAN 3/11 | HS-CAN 6/14)",
   "  /key <seed8hex>   посчитать ключ seed->key офлайн",
   "  /card             шпаргалка (клик по команде — вставить в prompt)",
   "  /raw on|off       показывать сырой RX",
@@ -849,7 +831,6 @@ async function onCommand(raw){
       case "ati": if(T.connected){try{logLine("✓",await atIdentity(),"ok");}catch(e){logLine("×",e.message,"err");}}else logLine("×","нет соединения","err");break;
       case "vin": await readVin();break;
       case "dtc": await readDtc();break;
-      case "bus": if(a==="ms"||a==="hs"){T.busPref=a;setFoot();logLine("—","шина: "+a.toUpperCase()+"-CAN","note");}else logLine("×","/bus ms | hs","err");break;
       case "key": try{var k=seed2key(a||"");setSeed(a);logLine("✓","seed "+(a||"").toUpperCase()+" -> key "+k+"  (2702"+k+")","ok");}catch(e){logLine("×",e.message,"err");}break;
       case "card": openSheet();break;
       case "raw": T.debug=(a==="on");logLine("—","сырой RX: "+(T.debug?"вкл":"выкл"),"note");break;
@@ -881,11 +862,10 @@ var SHEET=[
  {t:"Проверка шины",c:[
    ["ATZ","ELM327 v…",0,"сброс адаптера к заводским"],
    ["ATI","ELM327 v2.2",0,"идентификация / версия адаптера"],
-   ["STP53","OK — MS-CAN 125k",0,"выбрать протокол MS-CAN (ISO 15765, 125k, пины 3/11)"],
-   ["STPR","53",0,"номер текущего протокола"],
-   ["STPRS","ISO 15765, 11-bit, 125k",0,"протокол строкой (описание)"],
-   ["STPBRR","125000",0,"текущая скорость шины"],
-   ["STP33","OK (запас: HS-CAN 500k)",0,"запасной протокол HS-CAN 500k (пины 6/14)"]]},
+   ["ATPC","OK",0,"закрыть текущий протокол"],
+   ["ATTP6","OK",0,"выбрать HS-CAN 500k (ISO 15765, 11-bit, пины 6/14)"],
+   ["ATDPN","6",0,"номер текущего протокола (6 = ISO 15765 500k)"],
+   ["ATDP","ISO 15765-4 (CAN 11/500)",0,"протокол строкой (описание)"]]},
  {t:"Инициализация",c:[
    ["ATE0","OK",0,"эхо выкл (не повторять команду)"],
    ["ATL0","OK",0,"без перевода строк (LF)"],
@@ -893,8 +873,8 @@ var SHEET=[
    ["ATS0","OK",0,"без пробелов в ответе"],
    ["ATR1","OK",0,"ждать ответ"],
    ["ATM0","OK",0,"память выкл"],
-   ["STPC","OK",0,"закрыть текущий протокол"],
-   ["STP53","OK",0,"выбрать MS-CAN"],
+   ["ATPC","OK",0,"закрыть текущий протокол"],
+   ["ATTP6","OK",0,"выбрать HS-CAN 500k (пины 6/14)"],
    ["ATAL","OK",0,"разрешить длинные сообщения (>7 байт)"],
    ["ATV0","OK",0,"формат ответа (служебная)"],
    ["ATSH72B","OK",0,"заголовок запроса = 0x72B (адрес ГУ)"],
@@ -984,7 +964,7 @@ document.querySelectorAll(".pBle").forEach(function(b){b.addEventListener("click
 /* ---- banner ---- */
 logLine("","bz3x · elm terminal — Web Serial / Web Bluetooth","kv");
 logLine("","вкладка «Команды»: чеклист (ATE0…ATSTFF, ATTP6=HS, VIN, меню/ADB) → отправить в терминал.","kv");
-logLine("","вкладка «Скан»: пассивно слушает MS/HS на разных скоростях (ATMA), ищет живую шину. Не передаёт.","kv");
+logLine("","вкладка «Скан»: пассивно слушает HS-CAN на разных скоростях (ATMA), ищет живую шину. Не передаёт.","kv");
 logLine("","наберите /help. подключение: /connect (USB/BT-SPP) или /ble (BLE).","kv");
 if(!("serial" in navigator))logLine("×","этот браузер без Web Serial — нужен Chrome/Edge, HTTPS или file://","err");
 setFoot();
