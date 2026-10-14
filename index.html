@@ -1066,10 +1066,6 @@ html[data-theme="light"] #toast {
             <span id="sendline" class="send" title="клик — скопировать">2702<b>________</b></span>
           </div>
         </div>
-
-        <div class="chips">
-          <button class="chip" id="cAti">ATI</button>
-        </div>
       </div>
 
       <div id="view-cmds" class="view hidden">
@@ -1139,7 +1135,6 @@ html[data-theme="light"] #toast {
         <span class="seg">baud <b id="fBaud">—</b></span>
         <span class="seg">bus <b id="fBus">—</b></span>
         <span class="sp"></span>
-        <span class="seg"><a id="cardLink">шпаргалка</a></span>
         <span class="seg"><a id="helpLink" href="#">/help</a></span>
       </div>
     </div>
@@ -2923,10 +2918,6 @@ function openSheet() {
   switchView("card");
 } // шпаргалка теперь вкладка
 buildSheet(); // строим список команд один раз при загрузке
-$("#cardLink").addEventListener("click", function (e) {
-  e.preventDefault();
-  switchView("card");
-});
 
 /* ---- кнопки в панели вкладок: подключение (USB/BT-SPP + BLE) и сохранение лога ---- */
 function connMenuClose() {
@@ -2954,18 +2945,6 @@ document.addEventListener("click", function (e) {
 });
 // сохранить лог (только пиктограмма)
 $("#btnSave").addEventListener("click", downloadLog);
-// ATI — быстрая проверка связи
-$("#cAti").addEventListener("click", async function () {
-  if (!T.connected) {
-    toast("нет соединения");
-    return;
-  }
-  try {
-    logLine("✓", await atIdentity(), "ok");
-  } catch (e) {
-    logLine("×", e.message, "err");
-  }
-});
 
 /* ---- вкладки + набор команд ---- */
 document.querySelectorAll(".tab").forEach(function (t) {
