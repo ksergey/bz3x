@@ -124,13 +124,22 @@
   .verdict.pass{color:var(--ok);display:block} .verdict.fail{color:var(--err);display:block}
   .plog{flex:1;min-height:0;margin:0;padding:10px 12px;overflow:auto;-webkit-overflow-scrolling:touch;
     white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.5;background:var(--panel2)}
-  .inputwrap{display:flex;align-items:center;gap:8px;margin-top:8px;padding:11px 12px;
+  .inputwrap{position:relative;display:flex;align-items:center;gap:8px;margin-top:8px;margin-bottom:10px;padding:11px 12px;
     border:1px solid var(--line);border-radius:9px;background:var(--panel)}
   .inputwrap:focus-within{border-color:var(--accent)}
   .prompt{color:var(--accent);font-weight:700}
   #cmd{flex:1;background:transparent;border:0;outline:0;color:var(--fg);
     font-family:inherit;font-size:16px}  /* >=16 чтобы iOS не зумил при фокусе */
   #cmd::placeholder{color:var(--faint)}
+  /* автодополнение команд */
+  .acbox{position:absolute;left:-1px;right:-1px;top:calc(100% + 4px);z-index:30;max-height:46vh;overflow-y:auto;
+    -webkit-overflow-scrolling:touch;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    box-shadow:0 8px 24px rgba(0,0,0,.28)}
+  .acitem{display:flex;gap:10px;align-items:baseline;padding:9px 12px;cursor:pointer}
+  .acitem+.acitem{border-top:1px solid var(--line)}
+  .acitem.on{background:var(--panel2)}
+  .acitem .acc{color:var(--accent);font-weight:600;white-space:nowrap}
+  .acitem .acd{color:var(--dim);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* footer status line */
   .foot{display:flex;align-items:center;gap:14px;padding:7px 10px 2px;color:var(--dim);font-size:12px;flex-wrap:wrap}
   .foot .seg{display:inline-flex;align-items:center;gap:6px}
@@ -216,6 +225,7 @@
       <span class="prompt">❯</span>
       <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
              enterkeyhint="send" placeholder="команда адаптера (ATI, 22F190) или /help">
+      <div id="acbox" class="acbox hidden"></div>
     </div>
 
     <div class="screen">
@@ -295,7 +305,6 @@
     <span class="seg">bus <b id="fBus">—</b></span>
     <span class="sp"></span>
     <span class="seg"><a id="cardLink">шпаргалка</a></span>
-    <span class="seg"><a href="terminal-classic.html">classic</a></span>
     <span class="seg"><a id="helpLink" href="#">/help</a></span>
   </div>
 </div>
@@ -931,12 +940,90 @@ async function onCommand(raw){
   }catch(e){logLine("×",e.message,"err");}
 }
 
+/* ---- автодополнение команд (слэш + AT/ST/UDS) ---- */
+var AC_SLASH=[
+  ["/help","справка по командам"],["/connect","Web Serial (USB/BT-SPP), авто-baud"],["/ble","Web Bluetooth (BLE)"],
+  ["/services","GATT-сервисы BLE"],["/disconnect","закрыть порт"],["/ati","проверить связь (ATI)"],
+  ["/vin","прочитать VIN (read-only)"],["/dtc","прочитать DTC (19 02)"],["/key","seed→key офлайн"],
+  ["/card","шпаргалка"],["/raw","сырой RX вкл/выкл"],["/log","скачать лог обмена (.txt)"],
+  ["/busunlock","снять гейт шины (на свой риск)"],["/busrelock","вернуть гейт шины"],["/clear","очистить лог"]
+];
+var AC_AT=[
+  ["ATZ","сброс адаптера к заводским"],["ATI","версия адаптера"],["ATRV","напряжение на OBD"],
+  ["ATE0","эхо выкл"],["ATE1","эхо вкл"],["ATL0","без LF"],["ATS0","без пробелов"],
+  ["ATH1","заголовки (CAN ID) вкл"],["ATH0","заголовки выкл"],["ATR1","ждать ответ"],["ATM0","память выкл"],
+  ["ATAL","длинные сообщения (>7 байт)"],["ATV0","формат вывода"],
+  ["ATAT0","адаптивное ожидание выкл"],["ATAT1","адаптивное ожидание 1"],["ATAT2","адаптивное ожидание 2"],
+  ["ATSP6","протокол ISO 15765 (HS-CAN 500k)"],["ATTP6","переключение на HS-CAN 500k (6/14)"],
+  ["ATSH72B","заголовок запроса 0x72B"],["ATCRA7AB","фильтр приёма 0x7AB"],
+  ["ATFCSH72B","Flow Control: заголовок 72B"],["ATFCSD300014","FC данные 30 00 14"],["ATFCSM1","FC режим 1"],
+  ["ATCAF1","авто ISO-TP вкл"],["ATCFC1","авто Flow Control вкл"],
+  ["ATST64","таймаут ответа (0x64)"],["ATSTFF","таймаут ответа макс"],
+  ["ATDP","протокол строкой"],["ATDPN","номер текущего протокола"],["ATPC","закрыть протокол"],
+  ["ATMA","пассивно слушать шину (стоп — любой символ)"],
+  ["STI","версия прошивки STN"],["STP33","HS-CAN 500k (6/14)"],["STP53","MS-CAN 125k (3/11)"],
+  ["STPC","закрыть протокол"],["STPR","номер протокола"],["STPRS","протокол строкой"],["STPBRR","текущий битрейт"],
+  ["STPBR500000","битрейт 500k"],["STPBR250000","битрейт 250k"],["STPBR125000","битрейт 125k"],
+  ["22F190","VIN (read-only)"],["22F189","версия ПО ГУ (read-only)"],["22F186","активная сессия (read-only)"],
+  ["1003","расширенная сессия (10 03)"],["1001","обычная сессия (10 01)"],["3E00","TesterPresent"],
+  ["2701","запрос seed (SecurityAccess)"],["31012B00","открыть инж. меню"],["3101AE6501","включить ADB"],
+  ["1902FF","чтение DTC (19 02)"]
+];
+var acList=[],acIdx=-1;
+function acCompute(q){
+  q=(q||"").trim();
+  if(!q)return [];
+  if(q[0]==="/"){var ls=q.toLowerCase();return AC_SLASH.filter(function(it){return it[0].indexOf(ls)===0;}).slice(0,10);}
+  var us=q.toUpperCase();
+  return AC_AT.filter(function(it){return it[0].indexOf(us)===0;}).slice(0,10);
+}
+function acRender(){
+  var box=$("#acbox");
+  if(!acList.length){box.classList.add("hidden");box.innerHTML="";return;}
+  box.innerHTML="";
+  acList.forEach(function(it,i){
+    var el=document.createElement("div");el.className="acitem"+(i===acIdx?" on":"");
+    var c=document.createElement("span");c.className="acc";c.textContent=it[0];
+    var d=document.createElement("span");d.className="acd";d.textContent=it[1];
+    el.appendChild(c);el.appendChild(d);
+    el.addEventListener("mousedown",function(ev){ev.preventDefault();acAccept(i);});
+    box.appendChild(el);
+  });
+  box.classList.remove("hidden");
+  var on=box.querySelector(".acitem.on");if(on&&on.scrollIntoView)on.scrollIntoView({block:"nearest"});
+}
+function acUpdate(){acList=acCompute($("#cmd").value);acIdx=acList.length?0:-1;acRender();}
+function acClose(){acList=[];acIdx=-1;var b=$("#acbox");b.classList.add("hidden");b.innerHTML="";}
+function acMove(d){if(!acList.length)return;acIdx=(acIdx+d+acList.length)%acList.length;acRender();}
+function acAccept(i){
+  if(i==null)i=acIdx;if(i<0||i>=acList.length)return;
+  var cmd=acList[i][0],inp=$("#cmd");inp.value=cmd;acClose();inp.focus();
+  try{inp.setSelectionRange(cmd.length,cmd.length);}catch(e){}
+}
+
 /* ---- wire up ---- */
 var hist=[],hi=-1;
+$("#cmd").addEventListener("input",acUpdate);
+$("#cmd").addEventListener("blur",function(){setTimeout(acClose,120);});
 $("#cmd").addEventListener("keydown",function(e){
-  if(e.key==="Enter"){var v=this.value;this.value="";if(v.trim()){hist.push(v);hi=hist.length;}onCommand(v);}
-  else if(e.key==="ArrowUp"){if(hi>0){hi--;this.value=hist[hi];e.preventDefault();}}
-  else if(e.key==="ArrowDown"){if(hi<hist.length-1){hi++;this.value=hist[hi];}else{hi=hist.length;this.value="";}e.preventDefault();}
+  var open=acList.length>0;
+  if(e.key==="Enter"){
+    if(open&&acIdx>=0&&acList[acIdx][0].toUpperCase()!==this.value.trim().toUpperCase()){e.preventDefault();acAccept(acIdx);return;}
+    var v=this.value;this.value="";acClose();if(v.trim()){hist.push(v);hi=hist.length;}onCommand(v);
+  }else if(e.key==="Tab"){
+    if(open){e.preventDefault();acAccept(acIdx>=0?acIdx:0);}
+  }else if(e.key==="Escape"){
+    if(open){e.preventDefault();acClose();}
+  }else if(e.key==="ArrowUp"){
+    e.preventDefault();
+    if(open)acMove(-1);
+    else if(hi>0){hi--;this.value=hist[hi];}
+  }else if(e.key==="ArrowDown"){
+    e.preventDefault();
+    if(open)acMove(1);
+    else if(hi<hist.length-1){hi++;this.value=hist[hi];}
+    else{hi=hist.length;this.value="";}
+  }
 });
 $("#helpLink").addEventListener("click",function(e){e.preventDefault();help();});
 $("#sendline").addEventListener("click",function(){
