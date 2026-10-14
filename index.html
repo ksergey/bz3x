@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -1005,15 +1005,6 @@ html[data-theme="light"] #toast {
   </head>
   <body>
     <div class="app">
-      <div class="head">
-        <span class="brand">bz3x<span class="b2"> · elm terminal</span></span>
-        <span class="spacer"></span>
-        <span id="conn" class="pill"
-          ><span class="dot"></span><span id="connTxt">offline</span></span
-        >
-        <button id="theme" class="iconbtn" title="тема">🌙</button>
-      </div>
-
       <div class="tabrow">
         <div class="tabs">
           <button class="tab on" data-view="term">Терминал</button>
@@ -2041,11 +2032,9 @@ async function teardown(fromUI) {
    UI state
    ============================================================ */
 // setConn — обновить индикатор статуса подключения
+// Состояние подключения: кнопка подключения (зелёная = онлайн) + значения adapter/baud в подвале.
+// Отдельной «пилюли» больше нет; статус и ошибки подключения выводятся в терминал.
 function setConn(msg, cls) {
-  var p = $("#conn");
-  $("#connTxt").textContent = msg;
-  p.className = "pill" + (cls ? " " + cls : "");
-  // синхронизируем кнопку подключения в панели вкладок (зелёная = онлайн)
   var cb = $("#btnConn");
   if (cb) {
     var on = cls === "on";
@@ -2054,6 +2043,12 @@ function setConn(msg, cls) {
       ? "подключено — нажмите, чтобы отключить"
       : "подключиться (USB/BT-SPP или BLE)";
   }
+  if (msg === "offline") return; // состояние и так видно по adapter/baud и кнопке
+  logLine(
+    cls === "err" ? "×" : cls === "on" ? "✓" : "—",
+    msg,
+    cls === "err" ? "err" : cls === "on" ? "ok" : "note",
+  );
 }
 // setBusy — заблокировать/разблокировать ввод на время операции
 function setBusy(b) {
@@ -2969,30 +2964,6 @@ $("#cmdSend").addEventListener("click", sendChecked);
 buildScan();
 $("#scanRun").addEventListener("click", runScan);
 
-/* ---- theme ---- */
-(function () {
-  var root = document.documentElement,
-    btn = $("#theme");
-  function apply(t) {
-    root.setAttribute("data-theme", t);
-    btn.textContent = t === "light" ? "☀️" : "🌙";
-  }
-  var saved = null;
-  try {
-    saved = localStorage.getItem("bz3x-theme");
-  } catch (e) {}
-  apply(
-    saved ||
-      (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"),
-  );
-  btn.addEventListener("click", function () {
-    var t = root.getAttribute("data-theme") === "light" ? "dark" : "light";
-    apply(t);
-    try {
-      localStorage.setItem("bz3x-theme", t);
-    } catch (e) {}
-  });
-})();
 
 /* ---- banner ---- */
 logLine("", "bz3x · elm terminal — Web Serial / Web Bluetooth", "kv");
