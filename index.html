@@ -343,7 +343,7 @@ var AUTOBAUD=[38400,115200,9600,57600];
 
 var T={kind:null,connected:false,buf:"",lastData:0,debug:false,bus:null,authPending:false,
   port:null,writer:null,reader:null,bleDev:null,bleWrite:null,bleNotify:null,
-  adapter:"—",baud:"—",armed:false,keepAlive:false,_kaBusy:false};
+  adapter:"—",baud:"—",armed:false,keepAlive:false,_kaBusy:false,scanned:false};
 
 function norm(s){return String(s).replace(/\s+/g,"").toUpperCase();}
 function hasError(txt){var u=norm(txt);for(var i=0;i<ERROR_MARKERS.length;i++){if(u.indexOf(ERROR_MARKERS[i])>=0)return ERROR_MARKERS[i];}return "";}
@@ -408,7 +408,7 @@ async function drainIdle(maxMs){
   T.buf="";
 }
 
-function _rawCommand(cmd,timeoutMs){
+function _rawCommand(cmd,timeoutMs,rxSilent){
   timeoutMs=timeoutMs||3000;
   if(!T.connected)return Promise.reject(new Abort("нет соединения"));
   return drainIdle(120).then(async function(){
@@ -424,11 +424,13 @@ function _rawCommand(cmd,timeoutMs){
     }
     var txt=T.buf;T.buf="";
     if(!txt)throw new Abort("таймаут: нет ответа на '"+cmd+"'");
-    logLine("·",esc(txt),"rx");
+    if(!rxSilent)logLine("·",esc(txt),"rx");
     return txt;
   });
 }
 function command(cmd,timeoutMs){return locked(function(){return _rawCommand(cmd,timeoutMs);});}
+// ручной ввод: RX логируем сами — с цветом по вердикту валидатора
+function commandManual(cmd,timeoutMs){return locked(function(){return _rawCommand(cmd,timeoutMs,true);});}
 
 async function at(cmd,timeoutMs){
   var txt=await command(cmd,timeoutMs);
@@ -465,6 +467,60 @@ function decodeUds(text){
   if(firstLen!==null)out=out.slice(0,firstLen*2);
   return out;
 }
+
+/* ---- универсальная валидация ответа на ЛЮБУЮ введённую команду ----
+   Правило UDS: положительный ответ начинается с (SID запроса + 0x40).
+   Возвращает {cls, glyph, verdict}; cls -> класс строки лога (ok/err/note/rx). */
+function hx2(n){return ("0"+((n&0xFF).toString(16).toUpperCase())).slice(-2);}
+var UDS_SID={0x10:"DiagnosticSessionControl",0x11:"ECUReset",0x14:"ClearDTC",0x19:"ReadDTCInformation",
+  0x22:"ReadDataByIdentifier",0x23:"ReadMemoryByAddress",0x27:"SecurityAccess",0x28:"CommunicationControl",
+  0x2E:"WriteDataByIdentifier",0x2F:"InputOutputControl",0x31:"RoutineControl",0x34:"RequestDownload",
+  0x35:"RequestUpload",0x36:"TransferData",0x37:"RequestTransferExit",0x3D:"WriteMemoryByAddress",
+  0x3E:"TesterPresent",0x85:"ControlDTCSetting",0x86:"ResponseOnEvent"};
+var UDS_NRC={0x10:"generalReject",0x11:"serviceNotSupported",0x12:"subFunctionNotSupported",
+  0x13:"incorrectMessageLengthOrInvalidFormat",0x14:"responseTooLong",0x21:"busyRepeatRequest",
+  0x22:"conditionsNotCorrect",0x24:"requestSequenceError",0x31:"requestOutOfRange",
+  0x33:"securityAccessDenied",0x35:"invalidKey",0x36:"exceedNumberOfAttempts",
+  0x37:"requiredTimeDelayNotExpired",0x70:"uploadDownloadNotAccepted",0x72:"generalProgrammingFailure",
+  0x78:"responsePending",0x7E:"subFunctionNotSupportedInActiveSession",0x7F:"serviceNotSupportedInActiveSession"};
+function classifyResponse(cmd,txt){
+  var er=hasError(txt);
+  if(er)return {cls:"err",glyph:"×",verdict:"ошибка адаптера: "+er};
+  var c=norm(cmd);
+  var isHex=/^[0-9A-F]+$/.test(c)&&c.length>=2&&c.length%2===0&&!/^(AT|ST)/.test(c);
+  if(isHex){
+    var reqSid=parseInt(c.slice(0,2),16),d;
+    try{d=decodeUds(txt);}catch(e){return {cls:"err",glyph:"×",verdict:e.message};}
+    if(!d)return {cls:"note",glyph:"!",verdict:"ответ не распознан (пусто после декодирования)"};
+    if(d.indexOf("7F")===0){
+      var nsid=d.slice(2,4),nrc=parseInt(d.slice(4,6),16);
+      if(nrc===0x78)return {cls:"note",glyph:"…",verdict:"7F "+nsid+" 78 — responsePending (ЭБУ ещё обрабатывает)"};
+      return {cls:"err",glyph:"×",verdict:"отрицательный ответ 7F "+nsid+" "+hx2(nrc)+" — "+(UDS_NRC[nrc]||"неизвестный NRC")};
+    }
+    var exp=hx2(reqSid+0x40);
+    if(d.slice(0,2)===exp)
+      return {cls:"ok",glyph:"✓",verdict:"положительный ответ на сервис "+hx2(reqSid)+" ("+(UDS_SID[reqSid]||"UDS")+")"};
+    return {cls:"note",glyph:"!",verdict:"неожиданный ответ: ждали "+exp+"… ("+((UDS_SID[reqSid]||"UDS"))+"), пришло "+d.slice(0,2)+"…"};
+  }
+  if(/\bOK\b/.test(norm(txt)))return {cls:"ok",glyph:"✓",verdict:"OK"};
+  return {cls:"rx",glyph:"",verdict:""};   // AT/ST инфо-ответ (ATI/ATRV/STPR…) — нейтрально, без вердикта
+}
+
+/* ---- гейт шины: не выходить активно на HS/MS-CAN, пока не просканировали ----
+   Команды выбора протокола/битрейта (ATSPn, ATTPn, STP33/53…, STPBRn) выводят адаптер
+   на шину. До пассивного «Скан» мы не знаем, какая шина и на какой скорости живая —
+   неверный битрейт сыплет error-кадры (мигает приборка). Поэтому блокируем до скана. */
+function isBusSelectCmd(cmd){
+  var c=norm(cmd);
+  return /^ATSP[0-9A-C]$/.test(c)||/^ATTP[0-9A-C]$/.test(c)||/^STP[0-9]{2}$/.test(c)||/^STPBR[0-9]/.test(c);
+}
+function busGateOk(cmd){
+  if(T.scanned)return true;
+  logLine("×","«"+cmd+"» выводит адаптер на шину, а она ещё не просканирована. Сначала вкладка «Скан» "
+          +"(пассивно, безопасно). Либо /busunlock — на свой риск.","err");
+  return false;
+}
+
 async function uds(payload,expect,opts){
   opts=opts||{};
   var sendAtpc=(opts.atpc!==undefined)?opts.atpc:(payload==="1003"||payload.indexOf("27")===0);
@@ -485,6 +541,7 @@ function asciiFromHex(hex,prefixHexLen){
 /* ---- bus: IHU = HS-CAN 500k (ATTP6, пины 6/14) ---- */
 function isBusErr(e){var m=norm((e&&e.message)||"");return /CANERROR|BUSERROR|BUSINIT|NODATA|UNABLETOCONNECT/.test(m);}
 async function setupBus(){
+  if(!T.scanned)throw new Abort("шина не просканирована — сначала вкладка «Скан» (или /busunlock)");
   await at("ATPC");await at("ATTP6");T.bus="HS-CAN";setFoot();
   logLine("—","шина: HS-CAN 500k — ATTP6 (пины 6/14)","note");
   for(var i=0;i<INIT_POST.length;i++)await at(INIT_POST[i]);
@@ -684,6 +741,7 @@ async function sendChecked(){
       setCmdStatus(row,"run");
       var toSend=cmd;
       if(val==="key"){ if(!seed)throw new Abort("нет seed — отметь и выполни 2701 перед 2702"); toSend="2702"+seed2key(seed); }
+      if(isBusSelectCmd(toSend)&&!T.scanned)throw new Abort("«"+cmd+"» выводит на шину — сначала «Скан» (или /busunlock)");
       var slow=(val==="vin"||val==="key"||val==="seed"||val.indexOf("resp")===0);
       var txt=await command(toSend,slow?6000:3000);
       var er=hasError(txt);if(er)throw new Abort(cmd+": "+er);
@@ -713,7 +771,10 @@ async function sendChecked(){
 var SCAN=[
   {name:"HS-CAN  6/14 @ 500k", setup:["STPC","STP33"]},
   {name:"HS-CAN  6/14 @ 250k", setup:["STPC","STP33","STPBR250000"]},
-  {name:"HS-CAN  6/14 @ 125k", setup:["STPC","STP33","STPBR125000"]}
+  {name:"HS-CAN  6/14 @ 125k", setup:["STPC","STP33","STPBR125000"]},
+  {name:"MS-CAN  3/11 @ 125k", setup:["STPC","STP53"]},
+  {name:"MS-CAN  3/11 @ 95.2k", setup:["STPC","STP53","STPBR95238"]},
+  {name:"MS-CAN  3/11 @ 500k", setup:["STPC","STP53","STPBR500000"]}
 ];
 function buildScan(){
   var host=$("#scanList");host.innerHTML="";
@@ -785,7 +846,7 @@ async function runScan(){
     try{await closeProto();}catch(_){}
     slog("── готово. Живая шина = где «ТРАФИК». На ней ищи ГУ (вкладка «Команды»). ──");
   }catch(e){ slog("СТОП: "+e.message); }
-  finally{ setBusy(false); }
+  finally{ T.scanned=true; setBusy(false); logLine("—","шина просканирована — выход на HS/MS-CAN разрешён","note"); }
 }
 
 function switchView(v){
@@ -827,6 +888,7 @@ var HELP=[
   "  /card             шпаргалка (клик по команде — вставить в prompt)",
   "  /raw on|off       показывать сырой RX",
   "  /log              скачать лог обмена (.txt)",
+  "  /busunlock        снять гейт шины без скана (на свой риск); /busrelock — вернуть",
   "  /clear            очистить лог",
   "любой другой ввод уходит в адаптер как есть (ATI, 22F190, 2701 …)",
   "вкладка «Команды» — чеклист с валидацией: отметь нужное и «отправить в терминал»"
@@ -849,6 +911,8 @@ async function onCommand(raw){
       case "key": try{var k=seed2key(a||"");setSeed(a);logLine("✓","seed "+(a||"").toUpperCase()+" -> key "+k+"  (2702"+k+")","ok");}catch(e){logLine("×",e.message,"err");}break;
       case "card": openSheet();break;
       case "raw": T.debug=(a==="on");logLine("—","сырой RX: "+(T.debug?"вкл":"выкл"),"note");break;
+      case "busunlock": T.scanned=true;logLine("!","гейт шины снят вручную — команды HS/MS-CAN разрешены (на свой риск)","note");break;
+      case "busrelock": T.scanned=false;logLine("—","гейт шины включён — до «Скан» выход на шину заблокирован","note");break;
       case "clear": $("#log").innerHTML="";LOG=[];break;
       case "log": downloadLog();break;
       default: logLine("×","неизвестная команда /"+c+" — /help","err");
@@ -857,7 +921,14 @@ async function onCommand(raw){
   }
   // raw adapter command
   if(!T.connected){logLine("×","нет соединения — /connect или /ble","err");return;}
-  try{await command(line.toUpperCase());}catch(e){logLine("×",e.message,"err");}
+  var cmd=line.toUpperCase();
+  if(isBusSelectCmd(cmd)&&!busGateOk(cmd))return;   // гейт: не выходим на шину без скана
+  try{
+    var txt=await commandManual(cmd);
+    var v=classifyResponse(cmd,txt);
+    logLine("·",esc(txt),v.cls);                       // RX окрашен по вердикту (ok/err/note/rx)
+    if(v.verdict)logLine(v.glyph,v.verdict,v.cls);      // строка вердикта с расшифровкой
+  }catch(e){logLine("×",e.message,"err");}
 }
 
 /* ---- wire up ---- */
@@ -981,8 +1052,10 @@ document.querySelectorAll(".pBle").forEach(function(b){b.addEventListener("click
 /* ---- banner ---- */
 logLine("","bz3x · elm terminal — Web Serial / Web Bluetooth","kv");
 logLine("","вкладка «Команды»: чеклист (ATE0…ATSTFF, ATTP6=HS, VIN, меню/ADB) → отправить в терминал.","kv");
-logLine("","вкладка «Скан»: пассивно слушает HS-CAN на разных скоростях (ATMA), ищет живую шину. Не передаёт.","kv");
+logLine("","вкладка «Скан»: пассивно слушает HS-CAN и MS-CAN на разных скоростях (ATMA), ищет живую шину. Не передаёт.","kv");
 logLine("","наберите /help. подключение: /connect (USB/BT-SPP) или /ble (BLE).","kv");
+logLine("","ответ на любую введённую команду проверяется: ✓ положительный (SID+0x40) · × ошибка/7F NRC · ! неожиданный.","kv");
+logLine("","выход на шину (ATTP6/ATSP/STP33/STP53/STPBR) заблокирован до пассивного «Скан» — он покажет живую шину. Обойти: /busunlock.","kv");
 if(!("serial" in navigator))logLine("×","этот браузер без Web Serial — нужен Chrome/Edge, HTTPS или file://","err");
 setFoot();
 </script>
