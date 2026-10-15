@@ -515,6 +515,24 @@ body {
 html[data-theme="light"] .segbtn.on {
   color: #fff;
 }
+/* переключатель шины в «Командах» */
+.busrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 2px 0 10px;
+}
+.busrow .buslbl {
+  color: var(--dim);
+  font-size: 13px;
+}
+.busseg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+}
 .view {
   flex: 1;
   min-height: 0;
@@ -1062,8 +1080,15 @@ html[data-theme="light"] #toast {
       <div id="view-cmds" class="view hidden">
         <div class="proc">
           <div class="prochead">
-            Набор команд. Отмеченные отправятся в терминал по порядку с валидацией. <b>ATTP6</b> —
-            переключение на HS-CAN 500k (пины 6/14).
+            Набор команд. Отмеченные отправятся в терминал по порядку с валидацией. Шину ГУ выбери
+            переключателем ниже — строка «шина» развернётся в нужные команды.
+          </div>
+          <div class="busrow">
+            <span class="buslbl">шина ГУ:</span>
+            <div class="busseg" id="busSeg">
+              <button class="segbtn on" data-bus="hs">HS 6/14</button>
+              <button class="segbtn" data-bus="ms">MS 3/11 @ 500k</button>
+            </div>
           </div>
           <div class="procbar">
             <button class="chip" id="cmdAll">отметить всё</button>
@@ -1304,6 +1329,7 @@ var T = {
   lastData: 0,
   debug: false,
   bus: null,
+  busSel: "hs", // выбор шины в «Командах»: hs = 6/14, ms = 3/11 @ 500k
   authPending: false,
   port: null,
   writer: null,
@@ -2079,7 +2105,7 @@ var CMDS = [
   ["ATS0", "без пробелов", "ok"],
   ["ATR1", "ждать ответ", "ok"],
   ["ATM0", "память выкл", "ok"],
-  ["ATTP6", "переключение на HS-CAN 500k (6/14)", "ok"],
+  ["@BUS", "выбор шины ГУ (переключатель выше)", "bus"],
   ["ATAL", "длинные сообщения", "ok"],
   ["ATV0", "формат вывода", "ok"],
   ["ATSH72B", "заголовок запроса 72B", "ok"],
@@ -2098,7 +2124,14 @@ var CMDS = [
   ["31012B00", "открыть меню", "resp:71012B00"],
   ["3101AE6501", "включить ADB", "resp:7101AE6500"],
 ];
-var CMD_DEFAULT = { "22F190": 1 }; // по умолчанию отмечены init + VIN
+var CMD_DEFAULT = { "22F190": 1, "@BUS": 1 }; // по умолчанию отмечены init + выбор шины + VIN
+// команды выбора шины ГУ по текущему переключателю
+function busCmds() {
+  return T.busSel === "ms" ? ["STPC", "STP53", "STPBR500000"] : ["ATTP6"];
+}
+function busLabel() {
+  return T.busSel === "ms" ? "MS-CAN 3/11 @ 500k" : "HS-CAN 6/14 @ 500k";
+}
 // buildCmdList — построить чеклист вкладки «Команды» из массива CMDS
 function buildCmdList() {
   var host = $("#cmdList");
@@ -2117,10 +2150,10 @@ function buildCmdList() {
     st.textContent = "·";
     var cc = document.createElement("span");
     cc.className = "cc";
-    cc.textContent = it[0];
+    cc.textContent = it[0] === "@BUS" ? busCmds().join(" ") : it[0];
     var cd = document.createElement("span");
     cd.className = "cdesc";
-    cd.textContent = it[1];
+    cd.textContent = it[0] === "@BUS" ? "шина ГУ: " + busLabel() : it[1];
     row.appendChild(cb);
     row.appendChild(st);
     row.appendChild(cc);
@@ -2161,6 +2194,20 @@ async function sendChecked() {
       var cmd = row.getAttribute("data-cmd"),
         val = row.getAttribute("data-val");
       setCmdStatus(row, "run");
+      // спец-строка выбора шины: разворачивается в команды текущего переключателя
+      if (cmd === "@BUS") {
+        var bcmds = busCmds();
+        for (var k = 0; k < bcmds.length; k++) {
+          if (isBusSelectCmd(bcmds[k]) && !T.scanned)
+            throw new Abort("выбор шины выводит на шину — сначала «Скан» (или /busunlock)");
+          var bt = await command(bcmds[k], 3000);
+          var be = hasError(bt);
+          if (be) throw new Abort(bcmds[k] + ": " + be);
+          if (!/OK/i.test(bt)) throw new Abort(bcmds[k] + ": ожидался OK");
+        }
+        setCmdStatus(row, "ok", busLabel());
+        continue;
+      }
       var toSend = cmd;
       if (val === "key") {
         if (!seed) throw new Abort("нет seed — отметь и выполни 2701 перед 2702");
@@ -2948,6 +2995,29 @@ document.querySelectorAll(".tab").forEach(function (t) {
   });
 });
 buildCmdList();
+// переключатель шины ГУ (HS 6/14 ↔ MS 3/11 @ 500k) с запоминанием выбора
+function setBusSel(b) {
+  T.busSel = b === "ms" ? "ms" : "hs";
+  try {
+    localStorage.setItem("bz3x-bus", T.busSel);
+  } catch (e) {}
+  document.querySelectorAll("#busSeg .segbtn").forEach(function (x) {
+    x.classList.toggle("on", x.getAttribute("data-bus") === T.busSel);
+  });
+  buildCmdList();
+}
+document.querySelectorAll("#busSeg .segbtn").forEach(function (b) {
+  b.addEventListener("click", function () {
+    setBusSel(this.getAttribute("data-bus"));
+  });
+});
+(function () {
+  var saved = null;
+  try {
+    saved = localStorage.getItem("bz3x-bus");
+  } catch (e) {}
+  if (saved === "ms") setBusSel("ms");
+})();
 $("#cmdAll").addEventListener("click", function () {
   document.querySelectorAll("#cmdList input").forEach(function (i) {
     i.checked = true;
