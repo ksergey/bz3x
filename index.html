@@ -1725,7 +1725,7 @@ function out(msg, cls) {
   var el = $("#out");
   if (!el) return;
   var ts = new Date().toLocaleTimeString();
-  var g = cls === "err" ? "✗" : cls === "ok" ? "✓" : cls === "note" ? "!" : "·";
+  var g = cls === "err" ? "×" : cls === "ok" ? "✓" : cls === "note" ? "!" : "·";
   el.textContent += g + " [" + ts + "] " + msg + "\n";
   el.scrollTop = el.scrollHeight;
 }
@@ -1942,7 +1942,7 @@ async function detectBus() {
     }
     // ничего живого STN-пресетами. Если адаптер без ST — обычный ELM327 перепинован на 6/14.
     if (stnFail >= BUSES.length) {
-      out("адаптер без ST-команд → пробую обычный ELM327 на стандартных 6/14 @ 500k…", "note");
+      out("адаптер без ST-команд -> пробую обычный ELM327 на стандартных 6/14 @ 500k…", "note");
       try {
         return await probeVin(ELM_FALLBACK);
       } catch (e) {
@@ -2012,7 +2012,7 @@ async function runUnlock(routine, expect, label) {
       out("seed нулевой — доступ уже открыт, ключ не нужен", "note");
     } else {
       var key = seed2key(seed);
-      out("seed " + seed + " → ключ " + key + " (27 02)…");
+      out("seed " + seed + " -> ключ " + key + " (27 02)…");
       await uds("2702" + key, "6702", { atpc: false });
       out("доступ разблокирован", "ok");
     }
