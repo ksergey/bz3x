@@ -180,6 +180,11 @@ body {
   display: flex;
   gap: 6px;
 }
+/* кнопка raw hex: подсветка, когда режим включён */
+#btnRaw.on {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
 /* выпадающее меню выбора способа подключения */
 .connmenu {
   position: absolute;
@@ -1039,6 +1044,13 @@ html[data-theme="light"] #toast {
               <rect fill="currentColor" x="9" y="13" width="6" height="1.7" rx="0.85" />
             </svg>
           </button>
+          <button id="btnRaw" class="iconbtn" title="raw hex TX/RX (вкл/выкл)" aria-label="raw hex">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2.5l8 4.6v9.8l-8 4.6-8-4.6V7.1z" />
+              <path d="M9 10v5" /><path d="M15 10v5" /><path d="M9 10l6 5" />
+            </svg>
+          </button>
           <button id="btnSave" class="iconbtn" title="скачать лог обмена (.txt)" aria-label="скачать лог">
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1305,7 +1317,7 @@ var ERROR_MARKERS = [
   "ERR",
 ];
 var ID_MARKERS = ["ELM327", "ELM", "STN", "OBDLINK", "ELS27", "VLINKER", "STN2120", "STN1170"];
-var INIT_PRE = ["ATE0", "ATL0", "ATH1", "ATS0", "ATR1", "ATM0"];
+var INIT_PRE = ["ATE0", "ATL0", "ATH1", "ATS1", "ATR1", "ATM0"];
 var INIT_POST = [
   "ATAL",
   "ATV0",
@@ -1328,6 +1340,7 @@ var T = {
   buf: "",
   lastData: 0,
   debug: false,
+  rawHex: false, // дамп байтов TX/RX (кнопка в шапке или /raw hex)
   bus: null,
   busSel: "hs", // выбор шины в «Командах»: hs = 6/14, ms = 3/11 @ 500k
   authPending: false,
@@ -1348,6 +1361,24 @@ var T = {
 // norm — нормализация строки: верхний регистр, без пробелов
 function norm(s) {
   return String(s).replace(/\s+/g, "").toUpperCase();
+}
+
+// hexDump — массив байтов → hex-строка с пробелами («32 37 30 31 0D»)
+function hexDump(bytes) {
+  return Array.prototype.map
+    .call(bytes, function (b) {
+      return ("0" + (b & 0xff).toString(16).toUpperCase()).slice(-2);
+    })
+    .join(" ");
+}
+
+// hexPreview — ASCII-превью байтов (непечатное → «·») для raw-лога
+function hexPreview(bytes) {
+  return Array.prototype.map
+    .call(bytes, function (b) {
+      return b >= 32 && b < 127 ? String.fromCharCode(b) : "·";
+    })
+    .join("");
 }
 // hasError — ищет маркеры ошибок адаптера в ответе (NO DATA, CAN ERROR, ?…)
 function hasError(txt) {
@@ -1460,7 +1491,11 @@ async function serialReadLoop() {
     while (true) {
       var r = await T.reader.read();
       if (r.done) break;
-      if (r.value) feed(dec.decode(r.value));
+      if (r.value) {
+        if (T.rawHex)
+          logLine("·", "RX ← " + hexDump(r.value) + ' "' + hexPreview(r.value) + '"', "raw");
+        feed(dec.decode(r.value));
+      }
     }
   } catch (e) {
     if (T.connected) logLine("×", "порт закрылся: " + e.message, "err");
@@ -1500,7 +1535,9 @@ function _rawCommand(cmd, timeoutMs, rxSilent) {
     T.buf = "";
     T.lastData = Date.now();
     logLine("❯", cmd, "tx");
-    await writeBytes(new TextEncoder().encode(cmd + "\r"));
+    var txb = new TextEncoder().encode(cmd + "\r");
+    if (T.rawHex) logLine("❯", "TX → " + hexDump(txb) + " («" + cmd + "»)", "raw");
+    await writeBytes(txb);
     var t0 = Date.now();
     while (true) {
       if (T.buf.indexOf(">") >= 0) break;
@@ -1566,6 +1603,8 @@ function decodeUds(text) {
     if (s.length % 2) s = s.slice(0, -1);
     var b0 = parseInt(s.slice(0, 2), 16),
       hi = b0 >> 4;
+    // PCI (SF/FF/CF) распознаём только при старшем nibble ≤ 2; иначе считаем, что адаптер
+    // отдал данные без PCI (кейс «50 03 00 32 00 C8» на ATH0) — не откусываем первый байт.
     if (hi === 0) {
       var n = b0 & 0x0f;
       out += s.slice(2, 2 + n * 2);
@@ -1573,7 +1612,7 @@ function decodeUds(text) {
       firstLen = ((b0 & 0x0f) << 8) | parseInt(s.slice(2, 4), 16);
       out += s.slice(4);
     } else if (hi === 2) out += s.slice(2);
-    else out += s.slice(2);
+    else out += s;
   }
   if (firstLen !== null) out = out.slice(0, firstLen * 2);
   return out;
@@ -1651,6 +1690,16 @@ function classifyResponse(cmd, txt) {
           cls: "note",
           glyph: "…",
           verdict: "7F " + nsid + " 78 — responsePending (ЭБУ ещё обрабатывает)",
+        };
+      if (nrc === 0x7f)
+        // У ГУ bZ3X NRC 0x7F на 27 01 эмпирически означает «вычисляю ключ, переспроси»
+        return {
+          cls: "note",
+          glyph: "…",
+          verdict:
+            "7F " +
+            nsid +
+            " 7F — ЭБУ занят вычислением (responsePending ГУ bZ3X) — повтори 27 01",
         };
       return {
         cls: "err",
@@ -1937,7 +1986,10 @@ async function connectBle(uuidArg) {
     T.bleNotify = pair.notify;
     await T.bleNotify.startNotifications();
     T.bleNotify.addEventListener("characteristicvaluechanged", function (ev) {
-      feed(new TextDecoder().decode(ev.target.value));
+      var bytes = new Uint8Array(ev.target.value);
+      if (T.rawHex)
+        logLine("·", "RX ← " + hexDump(bytes) + ' "' + hexPreview(bytes) + '"', "raw");
+      feed(new TextDecoder().decode(bytes));
     });
     dev.addEventListener("gattserverdisconnected", function () {
       if (T.connected) {
@@ -2102,7 +2154,7 @@ var CMDS = [
   ["ATE0", "эхо выкл", "ok"],
   ["ATL0", "без LF", "ok"],
   ["ATH1", "заголовки (CAN ID) вкл", "ok"],
-  ["ATS0", "без пробелов", "ok"],
+  ["ATS1", "пробелы в ответе", "ok"],
   ["ATR1", "ждать ответ", "ok"],
   ["ATM0", "память выкл", "ok"],
   ["@BUS", "выбор шины ГУ (переключатель выше)", "bus"],
@@ -2171,6 +2223,34 @@ function setCmdStatus(row, status, detail) {
     cd.textContent = detail;
   }
 }
+// pollUDS — команда с повтором: responsePending (NRC 0x78/0x7F — так ГУ bZ3X отвечает
+// на 27 01 при вычислении ключа) и «пустые» ответы адаптера (STOPPED/NO DATA) не бросают,
+// а переотправляются. onRetry(i, tries) — прогресс; вернуло payload = декодированный ответ.
+async function pollUDS(cmd, tries, delayMs, onRetry) {
+  tries = tries || 0;
+  var delay = delayMs || 250;
+  for (var i = 0; ; i++) {
+    var txt = await command(cmd, 6000);
+    var er = hasError(txt);
+    if (er) throw new Abort(cmd + ": " + er);
+    var d = decodeUds(txt);
+    if (d.indexOf("7F") === 0) {
+      var nrc = parseInt(d.slice(4, 6), 16);
+      if ((nrc === 0x78 || nrc === 0x7f) && i < tries) {
+        if (onRetry) onRetry(i, tries);
+        await sleep(delay);
+        continue;
+      }
+      throw new Abort(cmd + ": отрицательный ответ 7F " + d.slice(2));
+    }
+    if (!d && i < tries) {
+      if (onRetry) onRetry(i, tries);
+      await sleep(delay + 150);
+      continue;
+    }
+    return d;
+  }
+}
 // sendChecked — отправить отмеченные команды по порядку с валидацией, стоп на первой ошибке
 async function sendChecked() {
   if (!T.connected) {
@@ -2216,15 +2296,19 @@ async function sendChecked() {
       if (isBusSelectCmd(toSend) && !T.scanned)
         throw new Abort("«" + cmd + "» выводит на шину — сначала «Скан» (или /busunlock)");
       var slow = val === "vin" || val === "key" || val === "seed" || val.indexOf("resp") === 0;
-      var txt = await command(toSend, slow ? 6000 : 3000);
-      var er = hasError(txt);
-      if (er) throw new Abort(cmd + ": " + er);
       if (val === "ok") {
+        var txt = await command(toSend, slow ? 6000 : 3000);
+        var er = hasError(txt);
+        if (er) throw new Abort(cmd + ": " + er);
         if (!/OK/i.test(txt)) throw new Abort(cmd + ": ожидался OK");
         setCmdStatus(row, "ok", "OK");
       } else {
-        var d = decodeUds(txt);
-        if (d.indexOf("7F") === 0) throw new Abort(cmd + ": 7F " + d.slice(2));
+        // UDS-ветка: для seed/key/рутин — poll при responsePending/пустых ответах адаптера
+        var tries =
+          val === "seed" ? 20 : val === "key" ? 8 : val.indexOf("resp") === 0 ? 8 : 0;
+        var d = await pollUDS(toSend, tries, val === "seed" ? 400 : 250, function (i, tt) {
+          setCmdStatus(row, "run", "pending/пусто — повтор " + (i + 1) + "/" + tt);
+        });
         if (val === "vin") {
           if (d.indexOf("62F190") !== 0)
             throw new Abort("VIN: нет ответа (" + (d || "пусто") + ")");
@@ -2244,6 +2328,11 @@ async function sendChecked() {
           if (d.indexOf(exp) !== 0)
             throw new Abort(cmd + ": ожидался " + exp + " (получено " + (d || "пусто") + ")");
           setCmdStatus(row, "ok", exp);
+          // после открытия расширенной сессии — держим её живой до конца набора
+          if (cmd === "1003") {
+            startKeepAlive();
+            logLine("—", "TesterPresent (3E00) каждые 2с — держит расширенную сессию", "note");
+          }
         }
       }
     }
@@ -2253,6 +2342,7 @@ async function sendChecked() {
     if (rr) setCmdStatus(rr, "fail", e.message.slice(0, 42));
     logLine("×", "СТОП: " + e.message, "err");
   } finally {
+    stopKeepAlive();
     setBusy(false);
   }
 }
@@ -2482,7 +2572,7 @@ var HELP = [
   "  /dtc              прочитать коды (19 02, read-only)",
   "  /key <seed8hex>   посчитать ключ seed->key офлайн",
   "  /card             шпаргалка (клик по команде — вставить в prompt)",
-  "  /raw on|off       показывать сырой RX",
+  "  /raw hex|on|off   hex-дамп байтов TX/RX | эскейпленный RX | выкл",
   "  /log              скачать лог обмена (.txt)",
   "  /busunlock        снять гейт шины без скана (на свой риск); /busrelock — вернуть",
   "  /clear            очистить лог",
@@ -2553,8 +2643,23 @@ async function onCommand(raw) {
         openSheet();
         break;
       case "raw":
-        T.debug = a === "on";
-        logLine("—", "сырой RX: " + (T.debug ? "вкл" : "выкл"), "note");
+        if (a === "hex") {
+          T.debug = false;
+          T.rawHex = true;
+          logLine("—", "сырой вывод: hex-дамп байтов RX/TX", "note");
+        } else if (a === "on") {
+          T.rawHex = false;
+          T.debug = true;
+          logLine("—", "сырой вывод: эскейпленный RX (hex — «/raw hex»)", "note");
+        } else if (a === "off") {
+          T.debug = false;
+          T.rawHex = false;
+          logLine("—", "сырой вывод: выкл", "note");
+        } else {
+          T.rawHex = !T.rawHex;
+          if (T.rawHex) T.debug = false;
+          logLine("—", "сырой вывод: " + (T.rawHex ? "hex-дамп OFF→ON" : "выкл"), "note");
+        }
         break;
       case "busunlock":
         T.scanned = true;
@@ -2606,7 +2711,7 @@ var AC_SLASH = [
   ["/dtc", "прочитать DTC (19 02)"],
   ["/key", "seed→key офлайн"],
   ["/card", "шпаргалка"],
-  ["/raw", "сырой RX вкл/выкл"],
+  ["/raw", "сырой вывод: hex|on|off"],
   ["/log", "скачать лог обмена (.txt)"],
   ["/busunlock", "снять гейт шины (на свой риск)"],
   ["/busrelock", "вернуть гейт шины"],
@@ -2620,7 +2725,7 @@ var AC_AT = [
   ["ATE0", "эхо выкл"],
   ["ATE1", "эхо вкл"],
   ["ATL0", "без LF"],
-  ["ATS0", "без пробелов"],
+  ["ATS1", "пробелы в ответе"],
   ["ATH1", "заголовки (CAN ID) вкл"],
   ["ATH0", "заголовки выкл"],
   ["ATR1", "ждать ответ"],
@@ -2835,7 +2940,7 @@ var SHEET = [
       ["ATE0", "OK", 0, "эхо выкл (не повторять команду)"],
       ["ATL0", "OK", 0, "без перевода строк (LF)"],
       ["ATH1", "OK", 0, "показывать заголовки (CAN ID отправителя)"],
-      ["ATS0", "OK", 0, "без пробелов в ответе"],
+      ["ATS1", "OK", 0, "пробелы в ответе (ATS1)"],
       ["ATR1", "OK", 0, "ждать ответ"],
       ["ATM0", "OK", 0, "память выкл"],
       ["ATPC", "OK", 0, "закрыть текущий протокол"],
@@ -2987,6 +3092,24 @@ document.addEventListener("click", function (e) {
 });
 // сохранить лог (только пиктограмма)
 $("#btnSave").addEventListener("click", downloadLog);
+// raw hex: дамп байтов TX/RX (кнопка в шапке; команды: /raw hex|on|off; сеть: localStorage)
+function setRawHex(on, quiet) {
+  T.rawHex = !!on;
+  if (T.rawHex) T.debug = false;
+  try {
+    localStorage.setItem("bz3x-rawhex", T.rawHex ? "1" : "0");
+  } catch (_) {}
+  var b = $("#btnRaw");
+  if (b) b.classList.toggle("on", T.rawHex);
+  if (!quiet) logLine("—", "raw hex: " + (T.rawHex ? "вкл — в логе видны байты TX/RX" : "выкл"), "note");
+}
+try {
+  T.rawHex = localStorage.getItem("bz3x-rawhex") === "1";
+} catch (_) {}
+if (T.rawHex && $("#btnRaw")) $("#btnRaw").classList.add("on");
+$("#btnRaw").addEventListener("click", function () {
+  setRawHex(!T.rawHex);
+});
 
 /* ---- вкладки + набор команд ---- */
 document.querySelectorAll(".tab").forEach(function (t) {

@@ -162,6 +162,11 @@ body {
   border-color: var(--ok);
   color: var(--ok);
 }
+/* кнопка raw hex: подсветка, когда режим включён */
+#btnRaw.on {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
 /* панель вкладок: сами вкладки слева (скроллятся), иконки-кнопки справа */
 .tabrow {
   display: flex;
@@ -1080,6 +1085,13 @@ html[data-theme="light"] #toast {
               <rect fill="currentColor" x="9" y="13" width="6" height="1.7" rx="0.85" />
             </svg>
           </button>
+          <button id="btnRaw" class="iconbtn" title="raw hex TX/RX (вкл/выкл)" aria-label="raw hex">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2.5l8 4.6v9.8l-8 4.6-8-4.6V7.1z" />
+              <path d="M9 10v5" /><path d="M15 10v5" /><path d="M9 10l6 5" />
+            </svg>
+          </button>
           <button id="btnSave" class="iconbtn" title="скачать лог (.txt)" aria-label="скачать лог">
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1258,7 +1270,7 @@ var ERROR_MARKERS = [
 
 var ID_MARKERS = ["ELM327", "ELM", "STN", "OBDLINK", "ELS27", "VLINKER", "STN2120", "STN1170"];
 
-var INIT_PRE = ["ATE0", "ATL0", "ATH1", "ATS0", "ATR1", "ATM0"];
+var INIT_PRE = ["ATE0", "ATL0", "ATH1", "ATS1", "ATR1", "ATM0"];
 
 var INIT_POST = [
   "ATAL",
@@ -1282,6 +1294,7 @@ var T = {
   buf: "",
   lastData: 0,
   debug: false,
+  rawHex: false,
   bus: null,
   busSel: "hs", // выбор шины в «Командах»: hs = 6/14, ms = 3/11 @ 500k
   authPending: false,
@@ -1304,6 +1317,11 @@ function norm(s) {
   return String(s).replace(/\s+/g, "").toUpperCase();
 }
 
+// hx2 — число → 2-символьный hex (верхний регистр)
+function hx2(n) {
+  return ("0" + ((n || 0) & 0xff).toString(16).toUpperCase()).slice(-2);
+}
+
 // hasError — ищет маркеры ошибок адаптера в ответе (NO DATA, CAN ERROR, ?…)
 function hasError(txt) {
   var u = norm(txt);
@@ -1318,7 +1336,30 @@ function esc(s) {
   return String(s).replace(/\r/g, "\\r").replace(/\n/g, "\\n");
 }
 
+// hexDump — массив байтов → hex-строка с пробелами («32 37 30 31 0D»)
+function hexDump(bytes) {
+  return Array.prototype.map
+    .call(bytes, function (b) {
+      return ("0" + (b & 0xff).toString(16).toUpperCase()).slice(-2);
+    })
+    .join(" ");
+}
+
+// hexPreview — ASCII-превью байтов (непечатное → «·») для raw-лога
+function hexPreview(bytes) {
+  return Array.prototype.map
+    .call(bytes, function (b) {
+      return b >= 32 && b < 127 ? String.fromCharCode(b) : "·";
+    })
+    .join("");
+}
+
 // feed — принять кусок RX в буфер (и показать сырой при /raw on)
+function feed(text) {
+  T.buf += text;
+  T.lastData = Date.now();
+  if (T.debug) logLine("·", esc(text), "raw");
+}
 function feed(text) {
   T.buf += text;
   T.lastData = Date.now();
@@ -1354,7 +1395,11 @@ async function serialReadLoop() {
     while (true) {
       var r = await T.reader.read();
       if (r.done) break;
-      if (r.value) feed(dec.decode(r.value));
+      if (r.value) {
+        if (T.rawHex)
+          logLine("·", "RX ← " + hexDump(r.value) + ' "' + hexPreview(r.value) + '"', "raw");
+        feed(dec.decode(r.value));
+      }
     }
   } catch (e) {
     if (T.connected) logLine("×", "порт закрылся: " + e.message, "err");
@@ -1392,7 +1437,9 @@ function _rawCommand(cmd, timeoutMs, rxSilent) {
     T.buf = "";
     T.lastData = Date.now();
     logLine("❯", cmd, "tx");
-    await writeBytes(new TextEncoder().encode(cmd + "\r"));
+    var txb = new TextEncoder().encode(cmd + "\r");
+    if (T.rawHex) logLine("❯", "TX → " + hexDump(txb) + " («" + cmd + "»)", "raw");
+    await writeBytes(txb);
     var t0 = Date.now();
     while (true) {
       if (T.buf.indexOf(">") >= 0) break;
@@ -1453,6 +1500,8 @@ function decodeUds(text) {
     if (s.length % 2) s = s.slice(0, -1);
     var b0 = parseInt(s.slice(0, 2), 16),
       hi = b0 >> 4;
+    // PCI (SF/FF/CF) распознаём только при старшем nibble ≤ 2; иначе будем считать, что
+    // адаптер отдал данные без PCI (например «50 03 00 32 00 C8» на ATH0) — не откусываем байт.
     if (hi === 0) {
       var n = b0 & 0x0f;
       out += s.slice(2, 2 + n * 2);
@@ -1460,29 +1509,66 @@ function decodeUds(text) {
       firstLen = ((b0 & 0x0f) << 8) | parseInt(s.slice(2, 4), 16);
       out += s.slice(4);
     } else if (hi === 2) out += s.slice(2);
-    else out += s.slice(2);
+    else out += s;
   }
   if (firstLen !== null) out = out.slice(0, firstLen * 2);
   return out;
 }
 
-// uds — отправить UDS-payload и проверить ожидаемый ответ
+// uds — отправить UDS-payload и проверить ожидаемый ответ.
+// С opts.tries > 0 повторяет запрос при responsePending (NRC 0x78 и 0x7F — так отвечает
+// ГУ bZ3X на 27 01 при вычислении ключа) и при «пустых» ответах адаптера (STOPPED/NO DATA).
+// Keep-alive сессии (3E 00) должен быть запущен вызывающей стороной на время ожидания.
 async function uds(payload, expect, opts) {
   opts = opts || {};
   var sendAtpc =
     opts.atpc !== undefined ? opts.atpc : payload === "1003" || payload.indexOf("27") === 0;
-  if (sendAtpc) {
-    await closeProto();
-    await sleep(350);
+  var tries = opts.tries || 0;
+  var delay = opts.pendingDelay || 250;
+  for (var i = 0; ; i++) {
+    if (i === 0 && sendAtpc) {
+      await closeProto();
+      await sleep(350);
+    }
+    await sleep(200);
+    var lastTxt = "";
+    try {
+      lastTxt = await command(payload, opts.timeout || 3500);
+    } catch (e) {
+      if (i < tries && /таймаут|нет ответа/i.test(e.message || "")) {
+        logLine("…", payload + ": " + e.message + " — повтор " + (i + 1) + "/" + tries, "note");
+        await sleep(delay);
+        continue;
+      }
+      throw e;
+    }
+    var data = decodeUds(lastTxt);
+    if (data.indexOf("7F") === 0) {
+      var nrc = parseInt(data.slice(4, 6), 16);
+      if ((nrc === 0x78 || nrc === 0x7f) && i < tries) {
+        logLine(
+          "…",
+          payload + ": NRC " + hx2(nrc) + " (обработка, responsePending) — повтор " + (i + 1) + "/" + tries,
+          "note",
+        );
+        await sleep(delay);
+        continue;
+      }
+      throw new Abort(payload + ": отрицательный ответ 7F " + data.slice(2));
+    }
+    if (!data && i < tries) {
+      logLine(
+        "…",
+        payload + ": пустой ответ адаптера (" + esc(lastTxt).trim() + ") — повтор " + (i + 1) + "/" + tries,
+        "note",
+      );
+      await sleep(delay + 150);
+      continue;
+    }
+    if (expect && data.indexOf(expect.toUpperCase()) !== 0)
+      throw new Abort(payload + ": ожидался " + expect + ", получено '" + data + "'");
+    return data;
   }
-  await sleep(200);
-  var txt = await command(payload, opts.timeout || 3500);
-  var data = decodeUds(txt);
-  if (data.indexOf("7F") === 0)
-    throw new Abort(payload + ": отрицательный ответ 7F " + data.slice(2));
-  if (expect && data.indexOf(expect.toUpperCase()) !== 0)
-    throw new Abort(payload + ": ожидался " + expect + ", получено '" + data + "'");
-  return data;
 }
 
 // asciiFromHex — декод ASCII из hex начиная с байта skip (напр. VIN)
@@ -1638,7 +1724,10 @@ async function connectBle(uuidArg) {
     T.bleNotify = pair.notify;
     await T.bleNotify.startNotifications();
     T.bleNotify.addEventListener("characteristicvaluechanged", function (ev) {
-      feed(new TextDecoder().decode(ev.target.value));
+      var bytes = new Uint8Array(ev.target.value);
+      if (T.rawHex)
+        logLine("·", "RX ← " + hexDump(bytes) + ' "' + hexPreview(bytes) + '"', "raw");
+      feed(new TextDecoder().decode(bytes));
     });
     dev.addEventListener("gattserverdisconnected", function () {
       if (T.connected) {
@@ -1736,11 +1825,13 @@ async function teardown(fromUI) {
 // буфер строк лога для выгрузки в .txt (экран рисуется спанами, textContent теряет переносы)
 var LOGBUF = [];
 // out — строка в окно вывода. Класс (err/ok/note) красит строку цветом; шапка (глиф+время) приглушена.
-function out(msg, cls) {
+function out(msg, cls, glyphForce) {
   var el = $("#out");
   if (!el) return;
   var ts = new Date().toLocaleTimeString();
-  var g = cls === "err" ? "×" : cls === "ok" ? "✓" : cls === "note" ? "!" : "·";
+  var g =
+    glyphForce ||
+    (cls === "err" ? "×" : cls === "ok" ? "✓" : cls === "note" ? "!" : "·");
   LOGBUF.push(g + " [" + ts + "] " + msg);
   var line = document.createElement("span"); // .ln <cls> — вся строка в цвет класса
   line.className = "ln " + (cls || "");
@@ -1752,9 +1843,9 @@ function out(msg, cls) {
   el.appendChild(line);
   el.scrollTop = el.scrollHeight;
 }
-// движок зовёт logLine(glyph,text,cls) — перенаправляем в вывод
+// движок зовёт logLine(glyph,text,cls) — перенаправляем в вывод, глиф сохраняем
 function logLine(glyph, text, cls) {
-  out(text, cls);
+  out(text, cls, glyph);
 }
 function setFoot() {
   var a = $("#fAdp"),
@@ -2012,6 +2103,7 @@ async function showVin() {
   }
 }
 // общий сценарий разблокировки: 10 03 -> 27 01 -> 27 02<key> -> рутина -> 10 01
+// При «пустых» ответах адаптера (STOPPED/NO DATA) — один полный повтор с ре-инициализацией.
 async function runUnlock(routine, expect, label) {
   if (!T.connected) {
     out("сначала подключите адаптер", "err");
@@ -2022,28 +2114,50 @@ async function runUnlock(routine, expect, label) {
   try {
     var c = T.detBus || (await ensureBus());
     if (!c) return;
-    await initAdapter(c.setup);
-    out("расширенная сессия (10 03)…");
-    await uds("1003", "5003", { atpc: false });
-    entered = true;
-    startKeepAlive();
-    out("запрос seed (27 01)…");
-    var seedP = await uds("2701", "6701", { atpc: false });
-    var seed = seedP.slice(4, 12);
-    if (/^0+$/.test(seed)) {
-      out("seed нулевой — доступ уже открыт, ключ не нужен", "note");
-    } else {
-      var key = seed2key(seed);
-      out("seed " + seed + " -> ключ " + key + " (27 02)…");
-      await uds("2702" + key, "6702", { atpc: false });
-      out("доступ разблокирован", "ok");
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await initAdapter(c.setup);
+        out("расширенная сессия (10 03)…");
+        await uds("1003", "5003", { atpc: false, tries: 4 });
+        entered = true;
+        startKeepAlive();
+        out("запрос seed (27 01)…");
+        var seedP = await uds("2701", "6701", { atpc: false, tries: 20, pendingDelay: 400 });
+        var seed = seedP.slice(4, 12);
+        if (/^0+$/.test(seed)) {
+          out("seed нулевой — доступ уже открыт, ключ не нужен", "note");
+        } else {
+          var key = seed2key(seed);
+          out("seed " + seed + " -> ключ " + key + " (27 02)…");
+          await uds("2702" + key, "6702", { atpc: false, tries: 8 });
+          out("доступ разблокирован", "ok");
+        }
+        out(label + " (" + routine + ")…");
+        await uds(routine, expect, { atpc: false, tries: 8 });
+        stopKeepAlive();
+        await uds("1001", "5001", { atpc: false, tries: 2 });
+        entered = false;
+        out(label + " — ГОТОВО ✓", "ok");
+        return;
+      } catch (e) {
+        if (
+          attempt === 0 &&
+          /пустой ответ|NODATA|NO\s?DATA|CAN ?ERROR/i.test(e.message || "")
+        ) {
+          out(
+            label + ": " + e.message + " — перезапускаю адаптер и шину, повторяю сценарий…",
+            "note",
+          );
+          stopKeepAlive();
+          entered = false;
+          try {
+            await closeProto();
+          } catch (_) {}
+          continue;
+        }
+        throw e;
+      }
     }
-    out(label + " (" + routine + ")…");
-    await uds(routine, expect, { atpc: false });
-    stopKeepAlive();
-    await uds("1001", "5001", { atpc: false });
-    entered = false;
-    out(label + " — ГОТОВО ✓", "ok");
   } catch (e) {
     out(label + ": " + e.message, "err");
   } finally {
@@ -2088,6 +2202,24 @@ document.addEventListener("click", function (e) {
   if (!e.target.closest || !e.target.closest("#btnConn, #connMenu")) connMenuClose();
 });
 $("#btnSave").addEventListener("click", downloadLog);
+// raw hex: дамп байтов TX/RX (состояние в localStorage)
+function setRawHex(on, quiet) {
+  T.rawHex = !!on;
+  try {
+    localStorage.setItem("bz3x-rawhex", T.rawHex ? "1" : "0");
+  } catch (_) {}
+  var b = $("#btnRaw");
+  if (b) b.classList.toggle("on", T.rawHex);
+  if (!quiet) out("raw hex: " + (T.rawHex ? "вкл — в логе видны байты TX/RX" : "выкл"), "note");
+}
+T.rawHex = false;
+try {
+  T.rawHex = localStorage.getItem("bz3x-rawhex") === "1";
+} catch (_) {}
+if (T.rawHex && $("#btnRaw")) $("#btnRaw").classList.add("on");
+$("#btnRaw").addEventListener("click", function () {
+  setRawHex(!T.rawHex);
+});
 $("#btnVin").addEventListener("click", showVin);
 $("#btnMenu").addEventListener("click", openMenu);
 $("#btnAdb").addEventListener("click", enableAdb);
