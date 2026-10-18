@@ -1317,6 +1317,36 @@ function norm(s) {
   return String(s).replace(/\s+/g, "").toUpperCase();
 }
 
+/* ---- маркер «ключ уже передавался» (пункт 5, дисциплина bz3x-menu) ---- */
+// Как только отправлен 27 02 <key>, сценарий больше не ретраится автоматически:
+// повторная передача ключа без разбора причины небезопасна (счётчик авторизации ГУ).
+// Маркер хранится в localStorage до успешного прогона («ГОТОВО ✓») либо до
+// явного подтверждения пользователя при следующем запуске.
+var AUTH_MARK = "bz3x-authPending";
+function authMark() {
+  try {
+    return localStorage.getItem(AUTH_MARK);
+  } catch (_) {
+    return null;
+  }
+}
+function authMarkSet() {
+  if (!T.authPending)
+    out("маркер: ключ (27 02) передан — авто-повтор сценария и ключа отключён", "note");
+  T.authPending = true;
+  try {
+    localStorage.setItem(AUTH_MARK, String(Date.now()));
+  } catch (_) {}
+}
+function authMarkClear() {
+  try {
+    localStorage.removeItem(AUTH_MARK);
+  } catch (_) {}
+  if (T.authPending) out("маркер «ключ передан» снят", "note");
+  T.authPending = false;
+}
+T.authPending = !!authMark(); // восстановить маркер после перезагрузки страницы
+
 // hx2 — число → 2-символьный hex (верхний регистр)
 function hx2(n) {
   return ("0" + ((n || 0) & 0xff).toString(16).toUpperCase()).slice(-2);
@@ -1524,6 +1554,9 @@ async function uds(payload, expect, opts) {
   var sendAtpc =
     opts.atpc !== undefined ? opts.atpc : payload === "1003" || payload.indexOf("27") === 0;
   var tries = opts.tries || 0;
+  // пункт 5: при 27 02 (keyGuard) не пересылать ключ на «пусто/таймаут»;
+  // ретраи на NRC 0x78/0x7F остаются — это запрос статуса ответа, не повтор ключа.
+  var guard = !!opts.keyGuard;
   var delay = opts.pendingDelay || 250;
   for (var i = 0; ; i++) {
     if (i === 0 && sendAtpc) {
@@ -1535,7 +1568,7 @@ async function uds(payload, expect, opts) {
     try {
       lastTxt = await command(payload, opts.timeout || 3500);
     } catch (e) {
-      if (i < tries && /таймаут|нет ответа/i.test(e.message || "")) {
+      if (!guard && i < tries && /таймаут|нет ответа/i.test(e.message || "")) {
         logLine("…", payload + ": " + e.message + " — повтор " + (i + 1) + "/" + tries, "note");
         await sleep(delay);
         continue;
@@ -1556,7 +1589,7 @@ async function uds(payload, expect, opts) {
       }
       throw new Abort(payload + ": отрицательный ответ 7F " + data.slice(2));
     }
-    if (!data && i < tries) {
+    if (!data && !guard && i < tries) {
       logLine(
         "…",
         payload + ": пустой ответ адаптера (" + esc(lastTxt).trim() + ") — повтор " + (i + 1) + "/" + tries,
@@ -2103,14 +2136,31 @@ async function showVin() {
   }
 }
 // общий сценарий разблокировки: 10 03 -> 27 01 -> 27 02<key> -> рутина -> 10 01
-// При «пустых» ответах адаптера (STOPPED/NO DATA) — один полный повтор с ре-инициализацией.
+// При «пустых» ответах ДО передачи ключа — один полный повтор с ре-инициализацией;
+// после передачи ключа (27 02) повтор запрещён (пункт 5): ставится маркер
+// authPending, снимается на успехе или явным подтверждением при следующем запуске.
 async function runUnlock(routine, expect, label) {
   if (!T.connected) {
     out("сначала подключите адаптер", "err");
     return;
   }
+  // пункт 5: если в прошлом прогоне ключ уже передавался и сценарий не дошёл
+  // до успеха — повторный запуск требует явного подтверждения пользователя.
+  if (authMark()) {
+    var okc = confirm(
+      "Активен маркер «ключ уже передавался»: прошлый прогон не дошёл до успеха.\n" +
+        "Повторный прогон снова отправит ключ (27 02) — делаем это осознанно?",
+    );
+    if (!okc) {
+      out("запуск отменён: активен маркер «ключ передан» (пункт 5)", "err");
+      return;
+    }
+    authMarkClear();
+    out("маркер «ключ передан» снят по подтверждению — повтор разрешён", "note");
+  }
   setBusy(true);
   var entered = false;
+  var keySent = false;
   try {
     var c = T.detBus || (await ensureBus());
     if (!c) return;
@@ -2126,10 +2176,15 @@ async function runUnlock(routine, expect, label) {
         var seed = seedP.slice(4, 12);
         if (/^0+$/.test(seed)) {
           out("seed нулевой — доступ уже открыт, ключ не нужен", "note");
+          authMarkClear(); // защита уже открыта, повтор ключа не грозит
         } else {
           var key = seed2key(seed);
           out("seed " + seed + " -> ключ " + key + " (27 02)…");
-          await uds("2702" + key, "6702", { atpc: false, tries: 8 });
+          // пункт 5: с этого момента ключ считается «переданным» — маркер
+          // ставится до отправки, а uds(keyGuard) не пересылает ключ повторно.
+          keySent = true;
+          authMarkSet();
+          await uds("2702" + key, "6702", { atpc: false, tries: 8, keyGuard: true });
           out("доступ разблокирован", "ok");
         }
         out(label + " (" + routine + ")…");
@@ -2138,8 +2193,17 @@ async function runUnlock(routine, expect, label) {
         await uds("1001", "5001", { atpc: false, tries: 2 });
         entered = false;
         out(label + " — ГОТОВО ✓", "ok");
+        authMarkClear(); // весь сценарий прошёл — маркер больше не нужен
         return;
       } catch (e) {
+        // пункт 5: после передачи ключа (27 02) полный перезапуск запрещён
+        if (keySent) {
+          throw new Error(
+            e.message +
+              " — авто-повтор отключён: ключ (27 02) уже передавался (пункт 5);" +
+              " маркер authPending сохранён до подтверждения",
+          );
+        }
         if (
           attempt === 0 &&
           /пустой ответ|NODATA|NO\s?DATA|CAN ?ERROR/i.test(e.message || "")
