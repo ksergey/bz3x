@@ -2099,6 +2099,7 @@ async function detectBus() {
   out("определяю шину безопасно: слушаю пассивно (ATMA, в шину ничего не передаю)…");
   try {
     var live = [],
+      quiet = [],
       stnFail = 0;
     for (var i = 0; i < BUSES.length; i++) {
       var c = BUSES[i];
@@ -2106,21 +2107,27 @@ async function detectBus() {
         var n = await sniffCount(c.setup, 1500);
         out(c.short + ": " + (n > 0 ? n + " кадров — живая" : "тихо"), n > 0 ? "ok" : "note");
         if (n > 0) live.push(c);
+        else quiet.push(c);
       } catch (e) {
         stnFail++;
         out(c.short + ": пропуск — " + e.message + " (нужен STN/ST-команды)", "note");
       }
     }
-    if (live.length) {
-      out("читаю VIN только на живой 500k-шине…");
-      for (var j = 0; j < live.length; j++) {
+    // Порядок проб: сначала живые шины, затем тихие. «Тихая» шина не значит
+    // мёртвая: MS бывает шумит реже 1.5 с снифа, а ГУ чаще всего отвечает
+    // именно на MS. Пресет фиксированный 500k, активный одиночный запрос к
+    // ГУ безопасен — худший случай «NO DATA».
+    var order = live.concat(quiet);
+    if (order.length) {
+      out("читаю VIN на 500k-шинах (сначала живые)…");
+      for (var j = 0; j < order.length; j++) {
         try {
-          return await probeVin(live[j]);
+          return await probeVin(order[j]);
         } catch (e) {
-          out(live[j].short + ": ГУ не ответило (" + e.message + ")");
+          out(order[j].short + ": ГУ не ответило (" + e.message + ")");
         }
       }
-      out("шины живые, но ГУ не ответило — включи экран ГУ и повтори.", "err");
+      out("ГУ пока молчит на всех шинах — включи экран ГУ и повтори.", "err");
       T.detBus = null;
       return null;
     }
