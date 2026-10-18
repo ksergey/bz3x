@@ -1072,7 +1072,6 @@ html[data-theme="light"] #toast {
     <div class="app">
       <div class="tabrow">
         <div class="tabs">
-          <button class="tab" id="btnVin" disabled>Показать VIN</button>
           <button class="tab" id="btnMenu" disabled>Инженерное меню</button>
           <button class="tab" id="btnAdb" disabled>Включить ADB</button>
         </div>
@@ -1945,13 +1944,13 @@ function setConn(msg, cls) {
   if (cls === "on") setFoot();
 }
 function enableActions(on) {
-  ["#btnVin", "#btnMenu", "#btnAdb"].forEach(function (id) {
+  ["#btnMenu", "#btnAdb"].forEach(function (id) {
     var e = $(id);
     if (e) e.disabled = !on;
   });
 }
 function setBusy(b) {
-  ["#btnVin", "#btnMenu", "#btnAdb", "#btnConn"].forEach(function (id) {
+  ["#btnMenu", "#btnAdb", "#btnConn"].forEach(function (id) {
     var e = $(id);
     if (e) e.disabled = b;
   });
@@ -2136,26 +2135,6 @@ function showVinValue(vin) {
 }
 
 /* ---- действия ---- */
-async function showVin() {
-  if (!T.connected) {
-    out("сначала подключите адаптер", "err");
-    return;
-  }
-  setBusy(true);
-  try {
-    var c = T.detBus || (await ensureBus());
-    if (!c) return;
-    await initAdapter(c.setup);
-    var d = await uds("22F190", "62F190", { atpc: false });
-    var vin = asciiFromHex(d, 6);
-    showVinValue(vin);
-    out("VIN: " + vin, "ok");
-  } catch (e) {
-    out("VIN: " + e.message, "err");
-  } finally {
-    setBusy(false);
-  }
-}
 // общий сценарий разблокировки: 10 03 -> 27 01 -> 27 02<key> -> рутина -> 10 01
 // При «пустых» ответах ДО передачи ключа — один полный повтор с ре-инициализацией;
 // после передачи ключа (27 02) повтор запрещён (пункт 5): ставится маркер
@@ -2305,7 +2284,6 @@ if (T.rawHex && $("#btnRaw")) $("#btnRaw").classList.add("on");
 $("#btnRaw").addEventListener("click", function () {
   setRawHex(!T.rawHex);
 });
-$("#btnVin").addEventListener("click", showVin);
 $("#btnMenu").addEventListener("click", openMenu);
 $("#btnAdb").addEventListener("click", enableAdb);
 
