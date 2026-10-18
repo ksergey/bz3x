@@ -1458,6 +1458,11 @@ async function drainIdle(maxMs) {
   T.buf = "";
 }
 
+// sp2 — hex-строку кода в читаемый вид: "22F190" → "22 F1 90"
+function sp2(s) {
+  return String(s).replace(/(..)/g, "$1 ").trim();
+}
+
 // _rawCommand — отправить команду и собрать ответ до '>' либо до таймаута
 function _rawCommand(cmd, timeoutMs, rxSilent) {
   timeoutMs = timeoutMs || 3000;
@@ -1465,7 +1470,11 @@ function _rawCommand(cmd, timeoutMs, rxSilent) {
   return drainIdle(120).then(async function () {
     T.buf = "";
     T.lastData = Date.now();
-    logLine("❯", cmd, "tx");
+    // UDS-команды печатаем с пробелами («22 F1 90»), AT/ST — как есть («ATI»):
+    // у AT/ST-команд всегда есть 'T'/'Z'/'S', так что «только hex + чётная длина» их не спутает.
+    var isHex =
+      /^[0-9A-F]+$/.test(cmd) && cmd.length >= 4 && cmd.length % 2 === 0;
+    logLine("❯", isHex ? sp2(cmd) : cmd, "tx");
     var txb = new TextEncoder().encode(cmd + "\r");
     if (T.rawHex) logLine("❯", "TX → " + hexDump(txb) + " («" + cmd + "»)", "raw");
     await writeBytes(txb);
