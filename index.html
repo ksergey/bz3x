@@ -1481,7 +1481,10 @@ function _rawCommand(cmd, timeoutMs, rxSilent) {
     var t0 = Date.now();
     while (true) {
       if (T.buf.indexOf(">") >= 0) break;
-      if (T.buf.length && Date.now() - T.lastData > 500) break;
+      // после данных ELM ждёт ещё AT ST (у нас ST=FF ≈ 1.02 с) и лишь потом
+      // печатает '>' (спека, раздел ST). Прерывать раньше нельзя: следующий CR
+      // будет трактован как interrupt → 'STOPPED' и команда потеряется.
+      if (T.buf.length && Date.now() - T.lastData > 1300) break;
       if (Date.now() - t0 > timeoutMs) break;
       await sleep(20);
     }
@@ -1598,9 +1601,15 @@ async function uds(payload, expect, opts) {
       throw new Abort(payload + ": отрицательный ответ 7F " + data.slice(2));
     }
     if (!data && !guard && i < tries) {
+      // STOPPED = ELM был прерван прошлым CR в фазе внутреннего ожидания
+      // (спека ST: промпт приходит через AT ST после ответа) — команда до
+      // шины не дошла, это штатно лечится повтором.
+      var why = /STOPPED/i.test(lastTxt)
+        ? "команда прервана (STOPPED) до отправки в шину"
+        : "пустой ответ адаптера (" + esc(lastTxt).trim() + ")";
       logLine(
         "…",
-        payload + ": пустой ответ адаптера (" + esc(lastTxt).trim() + ") — повтор " + (i + 1) + "/" + tries,
+        payload + ": " + why + " — повтор " + (i + 1) + "/" + tries,
         "note",
       );
       await sleep(delay + 150);
