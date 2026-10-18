@@ -2003,7 +2003,28 @@ function monitor(ms) {
       await writeBytes(new TextEncoder().encode("ATMA\r"));
       await sleep(ms);
       await writeBytes(new TextEncoder().encode("\r"));
-      await sleep(220);
+      // спека ELM327 (MA, стр. 41): после прерывания IC допечатывает текущую
+      // строку и лишь потом возвращает промпт '>' — фиксированная пауза даёт
+      // гонку: хвост потока (STOPPED, кадры <DATA ERROR) попадает в буфер
+      // следующей команды. Ждём '>' + 120 мс тишины (STOPPED есть не у всех
+      // клонов, поэтому не требуем его).
+      var t0 = Date.now();
+      while (Date.now() - t0 < 3000) {
+        var b = T.buf;
+        if (b.indexOf(">") >= 0) {
+          var quiet = Date.now();
+          while (Date.now() - quiet < 120) {
+            if (T.buf !== b) {
+              b = T.buf;
+              quiet = Date.now();
+            }
+            await sleep(20);
+          }
+          break;
+        }
+        if (Date.now() - T.lastData > 700) break; // тишина вовсе — не ждём
+        await sleep(20);
+      }
       var txt = T.buf;
       T.buf = "";
       return txt;
