@@ -1589,16 +1589,33 @@ async function uds(payload, expect, opts) {
     var data = decodeUds(lastTxt);
     if (data.indexOf("7F") === 0) {
       var nrc = parseInt(data.slice(4, 6), 16);
-      if ((nrc === 0x78 || nrc === 0x7f) && i < tries) {
+      var isPending = nrc === 0x78 || nrc === 0x7f;
+      // склейка кадров: ГУ присылает pending (7F xx 78) и финальный положительный
+      // ответ в одном буфере (лог 20261019-075556 — рутина: 7F3178+71012B0000).
+      // Если ожидаемый ответ уже там — берём его, лишние ретраи не нужны.
+      var bufNorm = String(lastTxt).replace(/\s+/g, "").toUpperCase();
+      var finIdx =
+        expect && isPending ? bufNorm.indexOf(expect.toUpperCase()) : -1;
+      if (finIdx >= 0) {
         logLine(
           "…",
-          payload + ": NRC " + hx2(nrc) + " (обработка, responsePending) — повтор " + (i + 1) + "/" + tries,
+          payload + ": NRC " + hx2(nrc) + ", финальный ответ уже в буфере — принято",
           "note",
         );
-        await sleep(delay);
-        continue;
+        data = bufNorm.slice(finIdx).replace(/[^0-9A-F].*$/, "");
+        // успех — проваливаемся в обычную проверку expect ниже
+      } else {
+        if (isPending && i < tries) {
+          logLine(
+            "…",
+            payload + ": NRC " + hx2(nrc) + " (обработка, responsePending) — повтор " + (i + 1) + "/" + tries,
+            "note",
+          );
+          await sleep(delay);
+          continue;
+        }
+        throw new Abort(payload + ": отрицательный ответ 7F " + data.slice(2));
       }
-      throw new Abort(payload + ": отрицательный ответ 7F " + data.slice(2));
     }
     if (!data && !guard && i < tries) {
       // STOPPED = ELM был прерван прошлым CR в фазе внутреннего ожидания
@@ -1712,7 +1729,9 @@ async function connectSerial(baudArg) {
       setConn("проверяю " + b + " бод…");
       var ok = false;
       try {
-        var txt = await command("ATI", 1500);
+        // ATZ — всегда первая команда к адаптеру (сброс состояния прошлой сессии);
+        // заодно возвращает ID-строку — проверяем бод по ней же
+        var txt = await command("ATZ", 2500);
         var u = txt.toUpperCase();
         ok =
           ID_MARKERS.some(function (m) {
@@ -1977,8 +1996,15 @@ function setBusy(b) {
     enableActions(T.connected);
   }
 }
-function afterConnect() {
+async function afterConnect() {
   enableActions(true);
+  // BLE: адаптер мог остаться в любом состоянии прежней сессии — мягкий сброс ATZ
+  // (у serial ATZ уже выполнен в детекции бода, повтор не нужен)
+  if (T.kind === "ble") {
+    try {
+      await command("ATZ", 2500);
+    } catch (_) {}
+  }
   detectBus();
 }
 function afterDisconnect() {
