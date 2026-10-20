@@ -1204,7 +1204,9 @@ function expandKey(key) {
   var w = [],
     i,
     j;
-  for (i = 0; i < 4; i++) w.push([key[i * 4], key[i * 4 + 1], key[i * 4 + 2], key[i * 4 + 3]]);
+  for (i = 0; i < 4; i++) {
+    w.push([key[i * 4], key[i * 4 + 1], key[i * 4 + 2], key[i * 4 + 3]]);
+  }
   for (i = 4; i < 44; i++) {
     var t = w[i - 1].slice();
     if (i % 4 === 0) {
@@ -1214,7 +1216,9 @@ function expandKey(key) {
     }
     var p = w[i - 4],
       r = [];
-    for (j = 0; j < 4; j++) r.push(p[j] ^ t[j]);
+    for (j = 0; j < 4; j++) {
+      r.push(p[j] ^ t[j]);
+    }
     w.push(r);
   }
   return w;
@@ -1228,15 +1232,23 @@ function encryptBlock(key, block) {
     st = [];
   for (c = 0; c < 4; c++) {
     var col = [];
-    for (r = 0; r < 4; r++) col.push(block[r + 4 * c] ^ w[c][r]);
+    for (r = 0; r < 4; r++) {
+      col.push(block[r + 4 * c] ^ w[c][r]);
+    }
     st.push(col);
   }
   for (rnd = 1; rnd <= 10; rnd++) {
-    for (c = 0; c < 4; c++) for (r = 0; r < 4; r++) st[c][r] = SBOX[st[c][r]];
+    for (c = 0; c < 4; c++) {
+      for (r = 0; r < 4; r++) {
+        st[c][r] = SBOX[st[c][r]];
+      }
+    }
     var ns = [];
     for (c = 0; c < 4; c++) {
       var nc = [];
-      for (r = 0; r < 4; r++) nc.push(st[(c + r) % 4][r]);
+      for (r = 0; r < 4; r++) {
+        nc.push(st[(c + r) % 4][r]);
+      }
       ns.push(nc);
     }
     st = ns;
@@ -1256,10 +1268,18 @@ function encryptBlock(key, block) {
       }
       st = mo;
     }
-    for (c = 0; c < 4; c++) for (r = 0; r < 4; r++) st[c][r] ^= w[rnd * 4 + c][r];
+    for (c = 0; c < 4; c++) {
+      for (r = 0; r < 4; r++) {
+        st[c][r] ^= w[rnd * 4 + c][r];
+      }
+    }
   }
   var out = [];
-  for (c = 0; c < 4; c++) for (r = 0; r < 4; r++) out.push(st[c][r]);
+  for (c = 0; c < 4; c++) {
+    for (r = 0; r < 4; r++) {
+      out.push(st[c][r]);
+    }
+  }
   return out;
 }
 var AES_KEY = [
@@ -1268,9 +1288,13 @@ var AES_KEY = [
 // seed2key — seed(4б) → key(4б): AES-128 + XOR-свёртка (ответ на SecurityAccess)
 function seed2key(seedHex) {
   var s = (seedHex || "").replace(/[^0-9a-fA-F]/g, "").toUpperCase();
-  if (s.length !== 8) throw new Error("нужно 8 hex-символов (4 байта)");
+  if (s.length !== 8) {
+    throw new Error("нужно 8 hex-символов (4 байта)");
+  }
   var seed = [];
-  for (var i = 0; i < 4; i++) seed.push(parseInt(s.substr(i * 2, 2), 16));
+  for (var i = 0; i < 4; i++) {
+    seed.push(parseInt(s.substr(i * 2, 2), 16));
+  }
   var ct = encryptBlock(AES_KEY, seed.concat([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]));
   var k = [
     ct[12] ^ ct[3] ^ (ct[15] ^ ct[0]),
@@ -1384,7 +1408,9 @@ function hexPreview(bytes) {
 function hasError(txt) {
   var u = norm(txt);
   for (var i = 0; i < ERROR_MARKERS.length; i++) {
-    if (u.indexOf(ERROR_MARKERS[i]) >= 0) return ERROR_MARKERS[i];
+    if (u.indexOf(ERROR_MARKERS[i]) >= 0) {
+      return ERROR_MARKERS[i];
+    }
   }
   return "";
 }
@@ -1459,17 +1485,23 @@ function downloadLog() {
 function feed(text) {
   T.buf += text;
   T.lastData = Date.now();
-  if (T.debug) logLine("·", esc(text), "raw");
+  if (T.debug) {
+    logLine("·", esc(text), "raw");
+  }
 }
 
 /* ---- transports ---- */
 // writeBytes — отправить байты в адаптер (Serial целиком или BLE чанками по 20)
 function writeBytes(bytes) {
-  if (T.kind === "serial") return T.writer.write(bytes);
+  if (T.kind === "serial") {
+    return T.writer.write(bytes);
+  }
   var chr = T.bleWrite,
     i = 0;
   function step() {
-    if (i >= bytes.length) return Promise.resolve();
+    if (i >= bytes.length) {
+      return Promise.resolve();
+    }
     var chunk = bytes.slice(i, i + 20);
     i += 20;
     var p =
@@ -1490,15 +1522,20 @@ async function serialReadLoop() {
   try {
     while (true) {
       var r = await T.reader.read();
-      if (r.done) break;
+      if (r.done) {
+        break;
+      }
       if (r.value) {
-        if (T.rawHex)
+        if (T.rawHex) {
           logLine("·", "RX ← " + hexDump(r.value) + ' "' + hexPreview(r.value) + '"', "raw");
+        }
         feed(dec.decode(r.value));
       }
     }
   } catch (e) {
-    if (T.connected) logLine("×", "порт закрылся: " + e.message, "err");
+    if (T.connected) {
+      logLine("×", "порт закрылся: " + e.message, "err");
+    }
   }
 }
 
@@ -1521,7 +1558,9 @@ async function drainIdle(maxMs) {
   var t0 = Date.now();
   T.lastData = Date.now();
   while (Date.now() - t0 < maxMs) {
-    if (Date.now() - T.lastData > 40) break;
+    if (Date.now() - T.lastData > 40) {
+      break;
+    }
     await sleep(15);
   }
   T.buf = "";
@@ -1530,25 +1569,39 @@ async function drainIdle(maxMs) {
 // _rawCommand — отправить команду и собрать ответ до '>' либо до таймаута
 function _rawCommand(cmd, timeoutMs, rxSilent) {
   timeoutMs = timeoutMs || 3000;
-  if (!T.connected) return Promise.reject(new Abort("нет соединения"));
+  if (!T.connected) {
+    return Promise.reject(new Abort("нет соединения"));
+  }
   return drainIdle(120).then(async function () {
     T.buf = "";
     T.lastData = Date.now();
     logLine("❯", cmd, "tx");
     var txb = new TextEncoder().encode(cmd + "\r");
-    if (T.rawHex) logLine("❯", "TX → " + hexDump(txb) + " («" + cmd + "»)", "raw");
+    if (T.rawHex) {
+      logLine("❯", "TX → " + hexDump(txb) + " («" + cmd + "»)", "raw");
+    }
     await writeBytes(txb);
     var t0 = Date.now();
     while (true) {
-      if (T.buf.indexOf(">") >= 0) break;
-      if (T.buf.length && Date.now() - T.lastData > 500) break;
-      if (Date.now() - t0 > timeoutMs) break;
+      if (T.buf.indexOf(">") >= 0) {
+        break;
+      }
+      if (T.buf.length && Date.now() - T.lastData > 500) {
+        break;
+      }
+      if (Date.now() - t0 > timeoutMs) {
+        break;
+      }
       await sleep(20);
     }
     var txt = T.buf;
     T.buf = "";
-    if (!txt) throw new Abort("таймаут: нет ответа на '" + cmd + "'");
-    if (!rxSilent) logLine("·", esc(txt), "rx");
+    if (!txt) {
+      throw new Abort("таймаут: нет ответа на '" + cmd + "'");
+    }
+    if (!rxSilent) {
+      logLine("·", esc(txt), "rx");
+    }
     return txt;
   });
 }
@@ -1569,8 +1622,12 @@ function commandManual(cmd, timeoutMs) {
 async function at(cmd, timeoutMs) {
   var txt = await command(cmd, timeoutMs);
   var e = hasError(txt);
-  if (e) throw new Abort(cmd + ": адаптер сообщил '" + e + "' (" + esc(txt).trim() + ")");
-  if (!/OK/i.test(txt)) throw new Abort(cmd + ": ожидался 'OK', получено " + esc(txt).trim());
+  if (e) {
+    throw new Abort(cmd + ": адаптер сообщил '" + e + "' (" + esc(txt).trim() + ")");
+  }
+  if (!/OK/i.test(txt)) {
+    throw new Abort(cmd + ": ожидался 'OK', получено " + esc(txt).trim());
+  }
   return txt;
 }
 // atIdentity — ATI с проверкой, что подключён ELM/STN-адаптер
@@ -1581,8 +1638,9 @@ async function atIdentity() {
     !ID_MARKERS.some(function (m) {
       return u.indexOf(m) >= 0;
     })
-  )
+  ) {
     throw new Abort("ATI: не похоже на ELM/STN (" + esc(txt).trim() + ")");
+  }
   return txt.replace(/[\r>]/g, " ").trim();
 }
 
@@ -1594,13 +1652,24 @@ function decodeUds(text) {
   var lines = text.replace(/\r/g, "\n").split("\n");
   for (var i = 0; i < lines.length; i++) {
     var s = norm(lines[i]).replace(/>/g, "");
-    if (!s) continue;
+    if (!s) {
+      continue;
+    }
     for (var k = 0; k < ERROR_MARKERS.length; k++)
-      if (s.indexOf(ERROR_MARKERS[k]) >= 0)
-        throw new Abort("ответ содержит '" + ERROR_MARKERS[k] + "'");
-    if (s.indexOf("7AB") === 0) s = s.slice(3);
-    if (s.length < 2 || !/^[0-9A-F]+$/.test(s)) continue;
-    if (s.length % 2) s = s.slice(0, -1);
+      {
+        if (s.indexOf(ERROR_MARKERS[k]) >= 0) {
+          throw new Abort("ответ содержит '" + ERROR_MARKERS[k] + "'");
+        }
+      }
+    if (s.indexOf("7AB") === 0) {
+      s = s.slice(3);
+    }
+    if (s.length < 2 || !/^[0-9A-F]+$/.test(s)) {
+      continue;
+    }
+    if (s.length % 2) {
+      s = s.slice(0, -1);
+    }
     var b0 = parseInt(s.slice(0, 2), 16),
       hi = b0 >> 4;
     // PCI (SF/FF/CF) распознаём только при старшем nibble ≤ 2; иначе считаем, что адаптер
@@ -1611,10 +1680,15 @@ function decodeUds(text) {
     } else if (hi === 1) {
       firstLen = ((b0 & 0x0f) << 8) | parseInt(s.slice(2, 4), 16);
       out += s.slice(4);
-    } else if (hi === 2) out += s.slice(2);
-    else out += s;
+    } else if (hi === 2) {
+      out += s.slice(2);
+    } else {
+      out += s;
+    }
   }
-  if (firstLen !== null) out = out.slice(0, firstLen * 2);
+  if (firstLen !== null) {
+    out = out.slice(0, firstLen * 2);
+  }
   return out;
 }
 
@@ -1669,7 +1743,9 @@ var UDS_NRC = {
 // classifyResponse — валидация любого ответа: ✓ положительный (SID+0x40) / × ошибка-NRC / ! неожиданный
 function classifyResponse(cmd, txt) {
   var er = hasError(txt);
-  if (er) return { cls: "err", glyph: "×", verdict: "ошибка адаптера: " + er };
+  if (er) {
+    return { cls: "err", glyph: "×", verdict: "ошибка адаптера: " + er };
+  }
   var c = norm(cmd);
   var isHex = /^[0-9A-F]+$/.test(c) && c.length >= 2 && c.length % 2 === 0 && !/^(AT|ST)/.test(c);
   if (isHex) {
@@ -1680,27 +1756,28 @@ function classifyResponse(cmd, txt) {
     } catch (e) {
       return { cls: "err", glyph: "×", verdict: e.message };
     }
-    if (!d)
+    if (!d) {
       return { cls: "note", glyph: "!", verdict: "ответ не распознан (пусто после декодирования)" };
+    }
     if (d.indexOf("7F") === 0) {
       var nsid = d.slice(2, 4),
         nrc = parseInt(d.slice(4, 6), 16);
       if (nrc === 0x78)
-        return {
+        {return {
           cls: "note",
           glyph: "…",
           verdict: "7F " + nsid + " 78 — responsePending (ЭБУ ещё обрабатывает)",
-        };
+        };}
       if (nrc === 0x7f)
         // У ГУ bZ3X NRC 0x7F на 27 01 эмпирически означает «вычисляю ключ, переспроси»
-        return {
+        {return {
           cls: "note",
           glyph: "…",
           verdict:
             "7F " +
             nsid +
             " 7F — ЭБУ занят вычислением (responsePending ГУ bZ3X) — повтори 27 01",
-        };
+        };}
       return {
         cls: "err",
         glyph: "×",
@@ -1715,12 +1792,12 @@ function classifyResponse(cmd, txt) {
     }
     var exp = hx2(reqSid + 0x40);
     if (d.slice(0, 2) === exp)
-      return {
+      {return {
         cls: "ok",
         glyph: "✓",
         verdict:
           "положительный ответ на сервис " + hx2(reqSid) + " (" + (UDS_SID[reqSid] || "UDS") + ")",
-      };
+      };}
     return {
       cls: "note",
       glyph: "!",
@@ -1734,7 +1811,9 @@ function classifyResponse(cmd, txt) {
         "…",
     };
   }
-  if (/\bOK\b/.test(norm(txt))) return { cls: "ok", glyph: "✓", verdict: "OK" };
+  if (/\bOK\b/.test(norm(txt))) {
+    return { cls: "ok", glyph: "✓", verdict: "OK" };
+  }
   return { cls: "rx", glyph: "", verdict: "" }; // AT/ST инфо-ответ (ATI/ATRV/STPR…) — нейтрально, без вердикта
 }
 
@@ -1754,7 +1833,9 @@ function isBusSelectCmd(cmd) {
 }
 // busGateOk — гейт шины: разрешить выход на шину только после «Скан»
 function busGateOk(cmd) {
-  if (T.scanned) return true;
+  if (T.scanned) {
+    return true;
+  }
   logLine(
     "×",
     "«" +
@@ -1778,10 +1859,12 @@ async function uds(payload, expect, opts) {
   await sleep(200);
   var txt = await command(payload, opts.timeout || 3500);
   var data = decodeUds(txt);
-  if (data.indexOf("7F") === 0)
+  if (data.indexOf("7F") === 0) {
     throw new Abort(payload + ": отрицательный ответ 7F " + data.slice(2));
-  if (expect && data.indexOf(expect.toUpperCase()) !== 0)
+  }
+  if (expect && data.indexOf(expect.toUpperCase()) !== 0) {
     throw new Abort(payload + ": ожидался " + expect + ", получено '" + data + "'");
+  }
   return data;
 }
 // asciiFromHex — декод ASCII из hex начиная с байта skip (напр. VIN)
@@ -1810,14 +1893,17 @@ function isBusErr(e) {
 }
 // setupBus — выбрать HS-CAN (ATTP6) и пост-инициализация; требует предварительный скан
 async function setupBus() {
-  if (!T.scanned)
+  if (!T.scanned) {
     throw new Abort("шина не просканирована — сначала вкладка «Скан» (или /busunlock)");
+  }
   await at("ATPC");
   await at("ATTP6");
   T.bus = "HS-CAN";
   setFoot();
   logLine("—", "шина: HS-CAN 500k — ATTP6 (пины 6/14)", "note");
-  for (var i = 0; i < INIT_POST.length; i++) await at(INIT_POST[i]);
+  for (var i = 0; i < INIT_POST.length; i++) {
+    await at(INIT_POST[i]);
+  }
 }
 // closeProto — закрыть текущий протокол адаптера (ATPC)
 async function closeProto() {
@@ -1829,10 +1915,14 @@ async function closeProto() {
 /* ---- TesterPresent keepalive (fix: сессия не отваливается между шагами) ---- */
 // startKeepAlive — запустить TesterPresent (3E00) каждые 2с — держит сессию
 function startKeepAlive() {
-  if (T.keepAlive) return;
+  if (T.keepAlive) {
+    return;
+  }
   T.keepAlive = true;
   T._ka = setInterval(function () {
-    if (!T.keepAlive || !T.connected || T._kaBusy) return;
+    if (!T.keepAlive || !T.connected || T._kaBusy) {
+      return;
+    }
     T._kaBusy = true;
     locked(function () {
       return _rawCommand("3E00", 1200);
@@ -1857,7 +1947,9 @@ function stopKeepAlive() {
 async function readVin() {
   try {
     setBusy(true);
-    for (var i = 0; i < INIT_PRE.length; i++) await at(INIT_PRE[i]);
+    for (var i = 0; i < INIT_PRE.length; i++) {
+      await at(INIT_PRE[i]);
+    }
     await setupBus();
     var p = await uds("22F190", "62F190");
     logLine("✓", "VIN: " + asciiFromHex(p, 6), "ok");
@@ -1874,7 +1966,9 @@ async function readVin() {
 async function readDtc() {
   try {
     setBusy(true);
-    for (var i = 0; i < INIT_PRE.length; i++) await at(INIT_PRE[i]);
+    for (var i = 0; i < INIT_PRE.length; i++) {
+      await at(INIT_PRE[i]);
+    }
     await setupBus();
     var p = await uds("1902FF", "5902");
     logLine("✓", "DTC (19 02): " + p, "ok");
@@ -1940,7 +2034,9 @@ async function connectSerial(baudArg) {
       }
       await teardown(false);
     }
-    if (found === null) throw new Abort("адаптер не отвечает на ATI (" + list.join("/") + " бод)");
+    if (found === null) {
+      throw new Abort("адаптер не отвечает на ATI (" + list.join("/") + " бод)");
+    }
     T.baud = found;
     T.adapter = "serial";
     setConn("online · Web Serial · " + found, "on");
@@ -1970,7 +2066,9 @@ async function connectBle(uuidArg) {
       "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
       "49535343-fe7d-4ae5-8fa9-9fafd205e455",
     ];
-    if (uuidArg) known.push(uuidArg.toLowerCase());
+    if (uuidArg) {
+      known.push(uuidArg.toLowerCase());
+    }
     var dev = await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
       optionalServices: known,
@@ -1978,7 +2076,9 @@ async function connectBle(uuidArg) {
     setConn("подключаюсь к " + dev.name + "…");
     var server = await dev.gatt.connect();
     var pair = await findSerialPair(server);
-    if (!pair) throw new Abort("не нашёл write/notify — укажи UUID: /ble <uuid>");
+    if (!pair) {
+      throw new Abort("не нашёл write/notify — укажи UUID: /ble <uuid>");
+    }
     T.bleDev = dev;
     T.kind = "ble";
     T.connected = true;
@@ -1987,8 +2087,9 @@ async function connectBle(uuidArg) {
     await T.bleNotify.startNotifications();
     T.bleNotify.addEventListener("characteristicvaluechanged", function (ev) {
       var bytes = new Uint8Array(ev.target.value);
-      if (T.rawHex)
+      if (T.rawHex) {
         logLine("·", "RX ← " + hexDump(bytes) + ' "' + hexPreview(bytes) + '"', "raw");
+      }
       feed(new TextDecoder().decode(bytes));
     });
     dev.addEventListener("gattserverdisconnected", function () {
@@ -2029,11 +2130,19 @@ async function findSerialPair(server) {
       n = null;
     for (var j = 0; j < chars.length; j++) {
       var p = chars[j].properties;
-      if (!n && p.notify) n = chars[j];
-      if (!w && (p.write || p.writeWithoutResponse)) w = chars[j];
+      if (!n && p.notify) {
+        n = chars[j];
+      }
+      if (!w && (p.write || p.writeWithoutResponse)) {
+        w = chars[j];
+      }
     }
-    if (w && n) return { write: w, notify: n };
-    if (w && !fb) fb = { write: w, notify: null };
+    if (w && n) {
+      return { write: w, notify: n };
+    }
+    if (w && !fb) {
+      fb = { write: w, notify: null };
+    }
   }
   return fb && fb.notify ? fb : null;
 }
@@ -2051,10 +2160,18 @@ async function listServices() {
       for (var j = 0; j < chars.length; j++) {
         var p = chars[j].properties,
           f = [];
-        if (p.write) f.push("write");
-        if (p.writeWithoutResponse) f.push("writeNR");
-        if (p.notify) f.push("notify");
-        if (p.read) f.push("read");
+        if (p.write) {
+          f.push("write");
+        }
+        if (p.writeWithoutResponse) {
+          f.push("writeNR");
+        }
+        if (p.notify) {
+          f.push("notify");
+        }
+        if (p.read) {
+          f.push("read");
+        }
         logLine(" ", "  " + chars[j].uuid + " [" + f.join(",") + "]", "rx");
       }
     }
@@ -2076,16 +2193,24 @@ async function teardown(fromUI) {
     }
     if (T.kind === "serial") {
       try {
-        if (T.reader) await T.reader.cancel();
+        if (T.reader) {
+          await T.reader.cancel();
+        }
       } catch (e) {}
       try {
-        if (T.writer) T.writer.releaseLock();
+        if (T.writer) {
+          T.writer.releaseLock();
+        }
       } catch (e) {}
       try {
-        if (T.reader) T.reader.releaseLock();
+        if (T.reader) {
+          T.reader.releaseLock();
+        }
       } catch (e) {}
       try {
-        if (T.port) await T.port.close();
+        if (T.port) {
+          await T.port.close();
+        }
       } catch (e) {}
     }
   } catch (e) {}
@@ -2121,7 +2246,9 @@ function setConn(msg, cls) {
       ? "подключено — нажмите, чтобы отключить"
       : "подключиться (USB/BT-SPP или BLE)";
   }
-  if (msg === "offline") return; // состояние и так видно по adapter/baud и кнопке
+  if (msg === "offline") {
+    return;
+  } // состояние и так видно по adapter/baud и кнопке
   logLine(
     cls === "err" ? "×" : cls === "on" ? "✓" : "—",
     msg,
@@ -2133,7 +2260,9 @@ function setBusy(b) {
   $("#cmd").disabled = b;
   ["#cmdSend", "#scanRun"].forEach(function (id) {
     var e = $(id);
-    if (e) e.disabled = b;
+    if (e) {
+      e.disabled = b;
+    }
   });
 }
 
@@ -2216,7 +2345,9 @@ function buildCmdList() {
 // setCmdStatus — проставить статус (·/>/✓/×) строке чеклиста
 function setCmdStatus(row, status, detail) {
   row.classList.remove("run", "ok", "fail");
-  if (status !== "pend") row.classList.add(status);
+  if (status !== "pend") {
+    row.classList.add(status);
+  }
   row.querySelector(".st").textContent = { pend: "·", run: ">", ok: "✓", fail: "×" }[status] || "·";
   if (detail != null) {
     var cd = row.querySelector(".cdesc");
@@ -2232,19 +2363,25 @@ async function pollUDS(cmd, tries, delayMs, onRetry) {
   for (var i = 0; ; i++) {
     var txt = await command(cmd, 6000);
     var er = hasError(txt);
-    if (er) throw new Abort(cmd + ": " + er);
+    if (er) {
+      throw new Abort(cmd + ": " + er);
+    }
     var d = decodeUds(txt);
     if (d.indexOf("7F") === 0) {
       var nrc = parseInt(d.slice(4, 6), 16);
       if ((nrc === 0x78 || nrc === 0x7f) && i < tries) {
-        if (onRetry) onRetry(i, tries);
+        if (onRetry) {
+          onRetry(i, tries);
+        }
         await sleep(delay);
         continue;
       }
       throw new Abort(cmd + ": отрицательный ответ 7F " + d.slice(2));
     }
     if (!d && i < tries) {
-      if (onRetry) onRetry(i, tries);
+      if (onRetry) {
+        onRetry(i, tries);
+      }
       await sleep(delay + 150);
       continue;
     }
@@ -2270,7 +2407,9 @@ async function sendChecked() {
   try {
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
-      if (!row.querySelector("input").checked) continue;
+      if (!row.querySelector("input").checked) {
+        continue;
+      }
       var cmd = row.getAttribute("data-cmd"),
         val = row.getAttribute("data-val");
       setCmdStatus(row, "run");
@@ -2278,29 +2417,41 @@ async function sendChecked() {
       if (cmd === "@BUS") {
         var bcmds = busCmds();
         for (var k = 0; k < bcmds.length; k++) {
-          if (isBusSelectCmd(bcmds[k]) && !T.scanned)
+          if (isBusSelectCmd(bcmds[k]) && !T.scanned) {
             throw new Abort("выбор шины выводит на шину — сначала «Скан» (или /busunlock)");
+          }
           var bt = await command(bcmds[k], 3000);
           var be = hasError(bt);
-          if (be) throw new Abort(bcmds[k] + ": " + be);
-          if (!/OK/i.test(bt)) throw new Abort(bcmds[k] + ": ожидался OK");
+          if (be) {
+            throw new Abort(bcmds[k] + ": " + be);
+          }
+          if (!/OK/i.test(bt)) {
+            throw new Abort(bcmds[k] + ": ожидался OK");
+          }
         }
         setCmdStatus(row, "ok", busLabel());
         continue;
       }
       var toSend = cmd;
       if (val === "key") {
-        if (!seed) throw new Abort("нет seed — отметь и выполни 2701 перед 2702");
+        if (!seed) {
+          throw new Abort("нет seed — отметь и выполни 2701 перед 2702");
+        }
         toSend = "2702" + seed2key(seed);
       }
-      if (isBusSelectCmd(toSend) && !T.scanned)
+      if (isBusSelectCmd(toSend) && !T.scanned) {
         throw new Abort("«" + cmd + "» выводит на шину — сначала «Скан» (или /busunlock)");
+      }
       var slow = val === "vin" || val === "key" || val === "seed" || val.indexOf("resp") === 0;
       if (val === "ok") {
         var txt = await command(toSend, slow ? 6000 : 3000);
         var er = hasError(txt);
-        if (er) throw new Abort(cmd + ": " + er);
-        if (!/OK/i.test(txt)) throw new Abort(cmd + ": ожидался OK");
+        if (er) {
+          throw new Abort(cmd + ": " + er);
+        }
+        if (!/OK/i.test(txt)) {
+          throw new Abort(cmd + ": ожидался OK");
+        }
         setCmdStatus(row, "ok", "OK");
       } else {
         // UDS-ветка: для seed/key/рутин — poll при responsePending/пустых ответах адаптера
@@ -2310,23 +2461,29 @@ async function sendChecked() {
           setCmdStatus(row, "run", "pending/пусто — повтор " + (i + 1) + "/" + tt);
         });
         if (val === "vin") {
-          if (d.indexOf("62F190") !== 0)
+          if (d.indexOf("62F190") !== 0) {
             throw new Abort("VIN: нет ответа (" + (d || "пусто") + ")");
+          }
           var vin = asciiFromHex(d, 6);
           setCmdStatus(row, "ok", vin);
           logLine("✓", "VIN: " + vin, "ok");
         } else if (val === "seed") {
-          if (d.indexOf("6701") !== 0) throw new Abort("seed: нет ответа");
+          if (d.indexOf("6701") !== 0) {
+            throw new Abort("seed: нет ответа");
+          }
           seed = d.slice(4, 12);
           setSeed(seed);
           setCmdStatus(row, "ok", "seed " + seed);
         } else if (val === "key") {
-          if (d.indexOf("6702") !== 0) throw new Abort("ключ отклонён (" + (d || "пусто") + ")");
+          if (d.indexOf("6702") !== 0) {
+            throw new Abort("ключ отклонён (" + (d || "пусто") + ")");
+          }
           setCmdStatus(row, "ok", "6702");
         } else {
           var exp = val.slice(5);
-          if (d.indexOf(exp) !== 0)
+          if (d.indexOf(exp) !== 0) {
             throw new Abort(cmd + ": ожидался " + exp + " (получено " + (d || "пусто") + ")");
+          }
           setCmdStatus(row, "ok", exp);
           // после открытия расширенной сессии — держим её живой до конца набора
           if (cmd === "1003") {
@@ -2339,7 +2496,9 @@ async function sendChecked() {
     logLine("▌", "==== НАБОР ВЫПОЛНЕН ====", "ok");
   } catch (e) {
     var rr = document.querySelector("#cmdList .cmdrow.run");
-    if (rr) setCmdStatus(rr, "fail", e.message.slice(0, 42));
+    if (rr) {
+      setCmdStatus(rr, "fail", e.message.slice(0, 42));
+    }
     logLine("×", "СТОП: " + e.message, "err");
   } finally {
     stopKeepAlive();
@@ -2409,11 +2568,15 @@ function parseFrames(txt) {
     samples = [];
   for (var i = 0; i < lines.length; i++) {
     var s = lines[i].trim().toUpperCase();
-    if (!s || s === ">" || s.indexOf("STOPPED") >= 0 || s.indexOf("ATMA") === 0) continue;
+    if (!s || s === ">" || s.indexOf("STOPPED") >= 0 || s.indexOf("ATMA") === 0) {
+      continue;
+    }
     if (/^[0-9A-F]{3}([ ]|$|[0-9A-F])/.test(s)) {
       ids[s.slice(0, 3)] = 1;
       n++;
-      if (samples.length < 8) samples.push(s);
+      if (samples.length < 8) {
+        samples.push(s);
+      }
     }
   }
   return { n: n, ids: Object.keys(ids), samples: samples };
@@ -2507,13 +2670,17 @@ async function runScan() {
 function switchView(v) {
   ["term", "cmds", "scan", "card"].forEach(function (name) {
     var el = $("#view-" + name);
-    if (el) el.classList.toggle("hidden", name !== v);
+    if (el) {
+      el.classList.toggle("hidden", name !== v);
+    }
   });
   document.querySelectorAll(".tab").forEach(function (t) {
     var on = t.getAttribute("data-view") === v;
     t.classList.toggle("on", on);
     // на узких экранах докручиваем активную вкладку в видимую область
-    if (on && t.scrollIntoView) t.scrollIntoView({ inline: "nearest", block: "nearest" });
+    if (on && t.scrollIntoView) {
+      t.scrollIntoView({ inline: "nearest", block: "nearest" });
+    }
   });
 }
 // afterConnect — действия после подключения (фокус на ввод)
@@ -2589,7 +2756,9 @@ function help() {
 // onCommand — обработать ввод: слэш-команда или сырой запрос к адаптеру (+гейт/валидация)
 async function onCommand(raw) {
   var line = raw.trim();
-  if (!line) return;
+  if (!line) {
+    return;
+  }
   if (line[0] === "/") {
     var parts = line.slice(1).split(/\s+/),
       c = parts[0].toLowerCase(),
@@ -2618,7 +2787,7 @@ async function onCommand(raw) {
           } catch (e) {
             logLine("×", e.message, "err");
           }
-        } else logLine("×", "нет соединения", "err");
+        } else {logLine("×", "нет соединения", "err");}
         break;
       case "vin":
         await readVin();
@@ -2657,7 +2826,9 @@ async function onCommand(raw) {
           logLine("—", "сырой вывод: выкл", "note");
         } else {
           T.rawHex = !T.rawHex;
-          if (T.rawHex) T.debug = false;
+          if (T.rawHex) {
+            T.debug = false;
+          }
           logLine("—", "сырой вывод: " + (T.rawHex ? "hex-дамп OFF→ON" : "выкл"), "note");
         }
         break;
@@ -2687,12 +2858,16 @@ async function onCommand(raw) {
     return;
   }
   var cmd = line.toUpperCase();
-  if (isBusSelectCmd(cmd) && !busGateOk(cmd)) return; // гейт: не выходим на шину без скана
+  if (isBusSelectCmd(cmd) && !busGateOk(cmd)) {
+    return;
+  } // гейт: не выходим на шину без скана
   try {
     var txt = await commandManual(cmd);
     var v = classifyResponse(cmd, txt);
     logLine("·", esc(txt), v.cls); // RX окрашен по вердикту (ok/err/note/rx)
-    if (v.verdict) logLine(v.glyph, v.verdict, v.cls); // строка вердикта с расшифровкой
+    if (v.verdict) {
+      logLine(v.glyph, v.verdict, v.cls);
+    } // строка вердикта с расшифровкой
   } catch (e) {
     logLine("×", e.message, "err");
   }
@@ -2776,7 +2951,9 @@ var acList = [],
 // acCompute — подобрать подсказки автодополнения по префиксу ввода
 function acCompute(q) {
   q = (q || "").trim();
-  if (!q) return [];
+  if (!q) {
+    return [];
+  }
   if (q[0] === "/") {
     var ls = q.toLowerCase();
     return AC_SLASH.filter(function (it) {
@@ -2816,7 +2993,9 @@ function acRender() {
   });
   box.classList.remove("hidden");
   var on = box.querySelector(".acitem.on");
-  if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest" });
+  if (on && on.scrollIntoView) {
+    on.scrollIntoView({ block: "nearest" });
+  }
 }
 // acUpdate — пересчитать подсказки и показать их
 function acUpdate() {
@@ -2834,14 +3013,20 @@ function acClose() {
 }
 // acMove — перемещение по подсказкам стрелками ↑/↓
 function acMove(d) {
-  if (!acList.length) return;
+  if (!acList.length) {
+    return;
+  }
   acIdx = (acIdx + d + acList.length) % acList.length;
   acRender();
 }
 // acAccept — принять подсказку — вставить команду в поле ввода
 function acAccept(i) {
-  if (i == null) i = acIdx;
-  if (i < 0 || i >= acList.length) return;
+  if (i == null) {
+    i = acIdx;
+  }
+  if (i < 0 || i >= acList.length) {
+    return;
+  }
   var cmd = acList[i][0],
     inp = $("#cmd");
   inp.value = cmd;
@@ -2887,14 +3072,18 @@ $("#cmd").addEventListener("keydown", function (e) {
     }
   } else if (e.key === "ArrowUp") {
     e.preventDefault();
-    if (open) acMove(-1);
+    if (open) {
+      acMove(-1);
+    }
     else if (hi > 0) {
       hi--;
       this.value = hist[hi];
     }
   } else if (e.key === "ArrowDown") {
     e.preventDefault();
-    if (open) acMove(1);
+    if (open) {
+      acMove(1);
+    }
     else if (hi < hist.length - 1) {
       hi++;
       this.value = hist[hi];
@@ -2909,12 +3098,14 @@ $("#helpLink").addEventListener("click", function (e) {
   help();
 });
 $("#sendline").addEventListener("click", function () {
-  if (!currentKey) return;
+  if (!currentKey) {
+    return;
+  }
   var t = "2702" + currentKey;
   if (navigator.clipboard)
-    navigator.clipboard.writeText(t).then(function () {
+    {navigator.clipboard.writeText(t).then(function () {
       logLine("—", "скопировано: " + t, "note");
-    });
+    });}
 });
 
 /* ---- встроенная шпаргалка ---- */
@@ -2991,15 +3182,16 @@ function toast(m) {
 // copySheet — скопировать текст в буфер обмена
 function copySheet(text) {
   if (navigator.clipboard && navigator.clipboard.writeText)
-    navigator.clipboard.writeText(text).then(
+    {navigator.clipboard.writeText(text).then(
       function () {
         toast("скопировано");
       },
       function () {
         toast("не удалось");
       },
-    );
-  else toast("буфер недоступен");
+    );} else {
+    toast("буфер недоступен");
+  }
 }
 // insertCmd — вставить команду из шпаргалки в поле ввода
 function insertCmd(cmd) {
@@ -3083,30 +3275,43 @@ $("#btnConn").addEventListener("click", function (e) {
 document.querySelectorAll("#connMenu .cmi").forEach(function (b) {
   b.addEventListener("click", function () {
     connMenuClose();
-    if (this.getAttribute("data-conn") === "ble") connectBle("");
-    else connectSerial(0);
+    if (this.getAttribute("data-conn") === "ble") {
+      connectBle("");
+    } else {
+      connectSerial(0);
+    }
   });
 });
 document.addEventListener("click", function (e) {
-  if (!e.target.closest || !e.target.closest("#btnConn, #connMenu")) connMenuClose();
+  if (!e.target.closest || !e.target.closest("#btnConn, #connMenu")) {
+    connMenuClose();
+  }
 });
 // сохранить лог (только пиктограмма)
 $("#btnSave").addEventListener("click", downloadLog);
 // raw hex: дамп байтов TX/RX (кнопка в шапке; команды: /raw hex|on|off; сеть: localStorage)
 function setRawHex(on, quiet) {
   T.rawHex = !!on;
-  if (T.rawHex) T.debug = false;
+  if (T.rawHex) {
+    T.debug = false;
+  }
   try {
     localStorage.setItem("bz3x-rawhex", T.rawHex ? "1" : "0");
   } catch (_) {}
   var b = $("#btnRaw");
-  if (b) b.classList.toggle("on", T.rawHex);
-  if (!quiet) logLine("—", "raw hex: " + (T.rawHex ? "вкл — в логе видны байты TX/RX" : "выкл"), "note");
+  if (b) {
+    b.classList.toggle("on", T.rawHex);
+  }
+  if (!quiet) {
+    logLine("—", "raw hex: " + (T.rawHex ? "вкл — в логе видны байты TX/RX" : "выкл"), "note");
+  }
 }
 try {
   T.rawHex = localStorage.getItem("bz3x-rawhex") === "1";
 } catch (_) {}
-if (T.rawHex && $("#btnRaw")) $("#btnRaw").classList.add("on");
+if (T.rawHex && $("#btnRaw")) {
+  $("#btnRaw").classList.add("on");
+}
 $("#btnRaw").addEventListener("click", function () {
   setRawHex(!T.rawHex);
 });
@@ -3139,7 +3344,9 @@ document.querySelectorAll("#busSeg .segbtn").forEach(function (b) {
   try {
     saved = localStorage.getItem("bz3x-bus");
   } catch (e) {}
-  if (saved === "ms") setBusSel("ms");
+  if (saved === "ms") {
+    setBusSel("ms");
+  }
 })();
 $("#cmdAll").addEventListener("click", function () {
   document.querySelectorAll("#cmdList input").forEach(function (i) {
@@ -3181,8 +3388,9 @@ logLine(
   "выход на шину (ATTP6/ATSP/STP33/STP53/STPBR) заблокирован до пассивного «Скан» — он покажет живую шину. Обойти: /busunlock.",
   "kv",
 );
-if (!("serial" in navigator))
+if (!("serial" in navigator)) {
   logLine("×", "этот браузер без Web Serial — нужен Chrome/Edge, HTTPS или file://", "err");
+}
 setFoot();
     </script>
   </body>
