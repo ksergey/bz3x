@@ -1,0 +1,1746 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <title>adb · webusb terminal</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      :root {
+        --bg: #0b0b0c;
+        --panel: #101012;
+        --panel2: #0e0e10;
+        --line: #242428;
+        --fg: #e4e4e6;
+        --dim: #8a8a92;
+        --faint: #5b5b63;
+        --accent: #7fd4c1;
+        --accent2: #6ca6ff;
+        --tx: #7fd4c1;
+        --rx: #c2c8d0;
+        --note: #d7b36a;
+        --ok: #8fe0a0;
+        --err: #e06c75;
+        --raw: #55555e;
+        --pill-bg: #141417;
+        --pill-line: #2c2c32;
+      }
+      html[data-theme="light"] {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --panel2: #f1f2f5;
+        --line: #e2e4ea;
+        --fg: #15171c;
+        --dim: #5c6270;
+        --faint: #9aa0ad;
+        --accent: #0f8d78;
+        --accent2: #2563c9;
+        --tx: #0f8d78;
+        --rx: #2b313c;
+        --note: #9a6a12;
+        --ok: #1a7f3c;
+        --err: #c0392b;
+        --raw: #9aa0ad;
+        --pill-bg: #eef0f4;
+        --pill-line: #d7dae1;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          14px/1.5 ui-monospace,
+          "SFMono-Regular",
+          "JetBrains Mono",
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      .app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        height: 100dvh;
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 10px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom));
+        padding-left: max(10px, env(safe-area-inset-left));
+        padding-right: max(10px, env(safe-area-inset-right));
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 4px 8px;
+      }
+      .brand {
+        font-weight: 700;
+        letter-spacing: 0.5px;
+      }
+      .brand .b2 {
+        color: var(--dim);
+        font-weight: 400;
+      }
+      .head .spacer {
+        flex: 1;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: var(--pill-bg);
+        border: 1px solid var(--pill-line);
+        color: var(--dim);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--faint);
+      }
+      .pill.on .dot {
+        background: var(--ok);
+      }
+      .pill.on {
+        color: var(--fg);
+      }
+      .pill.wait .dot {
+        background: var(--note);
+      }
+      .pill.wait {
+        color: var(--note);
+      }
+      .pill.err .dot {
+        background: var(--err);
+      }
+      .pill.err {
+        color: var(--err);
+      }
+      .iconbtn {
+        width: 38px;
+        height: 38px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--fg);
+        cursor: pointer;
+        font-size: 15px;
+        line-height: 1;
+        touch-action: manipulation;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+      }
+      .iconbtn:hover {
+        border-color: var(--accent);
+      }
+      .iconbtn .ic {
+        width: 20px;
+        height: 20px;
+        display: block;
+      }
+      .iconbtn.conn-on {
+        border-color: var(--ok);
+        color: var(--ok);
+      }
+      /* tabs row */
+      .tabrow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 2px 0 8px;
+      }
+      .tabrow .tabs {
+        flex: 1 1 auto;
+        min-width: 0;
+        margin: 0;
+      }
+      .toolbtns {
+        flex: 0 0 auto;
+        display: flex;
+        gap: 6px;
+      }
+      .tabs {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .tabs::-webkit-scrollbar {
+        display: none;
+      }
+      .tab {
+        flex: 0 0 auto;
+        min-height: 38px;
+        padding: 0 13px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--dim);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+        white-space: nowrap;
+        touch-action: manipulation;
+      }
+      .tab.on {
+        color: var(--fg);
+        border-color: var(--accent);
+        box-shadow: inset 0 -2px 0 var(--accent);
+      }
+      /* views */
+      .view {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .view.hidden {
+        display: none;
+      }
+      .screen {
+        flex: 1;
+        min-height: 0;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--panel);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .log {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        padding: 12px 14px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .ln {
+        display: block;
+      }
+      .g {
+        color: var(--faint);
+      }
+      .tx {
+        color: var(--tx);
+      }
+      .rx {
+        color: var(--rx);
+      }
+      .note {
+        color: var(--note);
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .err {
+        color: var(--err);
+        font-weight: 600;
+      }
+      .raw {
+        color: var(--raw);
+      }
+      .kv {
+        color: var(--dim);
+      }
+      .kv b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      /* input */
+      .inputwrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        margin-bottom: 2px;
+        padding: 11px 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--panel);
+      }
+      .inputwrap:focus-within {
+        border-color: var(--accent);
+      }
+      .prompt {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      #cmd {
+        flex: 1;
+        background: transparent;
+        border: 0;
+        outline: 0;
+        color: var(--fg);
+        font-family: inherit;
+        font-size: 16px;
+      }
+      #cmd::placeholder {
+        color: var(--faint);
+      }
+      #cmd:disabled {
+        color: var(--faint);
+      }
+      /* quick chips */
+      .chips {
+        display: flex;
+        gap: 7px;
+        margin-top: 8px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+      }
+      .chips::-webkit-scrollbar {
+        display: none;
+      }
+      .chip {
+        flex: 0 0 auto;
+        min-height: 36px;
+        padding: 0 13px;
+        border-radius: 9px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--fg);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        touch-action: manipulation;
+      }
+      .chip:hover {
+        border-color: var(--accent);
+      }
+      .chip:active {
+        background: var(--panel2);
+      }
+      /* device / info panels */
+      .proc {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+      .prochead {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12.5px;
+        color: var(--dim);
+        line-height: 1.5;
+      }
+      .prochead b {
+        color: var(--fg);
+      }
+      .procbar {
+        display: flex;
+        gap: 7px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      .proclist {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .inforow {
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        padding: 9px 14px;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+      }
+      .inforow:last-child {
+        border-bottom: 0;
+      }
+      .inforow .k {
+        color: var(--dim);
+        flex: 0 0 42%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .inforow .v {
+        color: var(--fg);
+        font-weight: 600;
+        word-break: break-word;
+      }
+      /* help card */
+      .procinfo {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 12px 14px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--dim);
+      }
+      .procinfo h3 {
+        color: var(--fg);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin: 16px 0 6px;
+      }
+      .procinfo h3:first-child {
+        margin-top: 0;
+      }
+      .procinfo b {
+        color: var(--fg);
+      }
+      .procinfo code {
+        color: var(--accent);
+      }
+      .procinfo p {
+        margin: 6px 0;
+      }
+      .procinfo ul {
+        margin: 4px 0;
+        padding-left: 18px;
+      }
+      .procinfo li {
+        margin: 3px 0;
+      }
+      .procinfo .cmd {
+        color: var(--accent);
+        cursor: pointer;
+      }
+      .procinfo .cmd:hover {
+        text-decoration: underline;
+      }
+      /* footer status */
+      .foot {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 7px 4px 2px;
+        color: var(--dim);
+        font-size: 12px;
+        flex-wrap: wrap;
+      }
+      .foot .seg {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .foot .seg b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .foot .sp {
+        flex: 1;
+      }
+      .foot a {
+        color: var(--accent2);
+        text-decoration: none;
+        cursor: pointer;
+        padding: 7px 4px;
+      }
+      .foot a:hover {
+        text-decoration: underline;
+      }
+      html:not([data-theme="light"]) .brand,
+      html:not([data-theme="light"]) .prompt {
+        text-shadow: 0 0 3px rgba(127, 212, 193, 0.25);
+      }
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%) translateY(16px);
+        z-index: 60;
+        background: var(--accent);
+        color: #06211b;
+        padding: 8px 15px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        opacity: 0;
+        pointer-events: none;
+        transition: 0.16s;
+        max-width: 80vw;
+        text-align: center;
+      }
+      #toast.on {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      html[data-theme="light"] #toast {
+        color: #fff;
+      }
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--line);
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="head">
+        <span class="brand">adb<span class="b2">&nbsp;· webusb</span></span>
+        <span class="spacer"></span>
+        <span id="statePill" class="pill"><span class="dot"></span><span id="stateTxt">не подключено</span></span>
+      </div>
+
+      <div class="tabrow">
+        <div class="tabs">
+          <button class="tab on" data-view="term">Терминал</button>
+          <button class="tab" data-view="dev">Устройство</button>
+          <button class="tab" data-view="screen">Экран</button>
+          <button class="tab" data-view="files">Файлы</button>
+          <button class="tab" data-view="help">Справка</button>
+        </div>
+        <div class="toolbtns">
+          <button id="btnConn" class="iconbtn" title="подключить устройство (WebUSB)" aria-label="подключение">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M7 7V4" /><path d="M17 7V4" />
+              <path d="M5 7h14v4a7 7 0 0 1-14 0z" />
+              <path d="M12 18v3" />
+            </svg>
+          </button>
+          <button id="btnClear" class="iconbtn" title="очистить лог" aria-label="очистить">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+              <path d="M6 7l1 13h10l1-13" />
+            </svg>
+          </button>
+          <button id="btnTheme" class="iconbtn" title="тема" aria-label="тема">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.8A8 8 0 1 1 11.2 3 6.3 6.3 0 0 0 21 12.8z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- terminal -->
+      <div id="view-term" class="view">
+        <div class="inputwrap">
+          <span class="prompt">❯</span>
+          <input
+            id="cmd"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            enterkeyhint="send"
+            disabled
+            placeholder="подключи устройство, затем: shell-команда или /help"
+          />
+        </div>
+        <div class="chips" id="chips"></div>
+        <div class="screen" style="margin-top: 8px">
+          <div id="log" class="log"></div>
+        </div>
+      </div>
+
+      <!-- device -->
+      <div id="view-dev" class="view hidden">
+        <div class="proc">
+          <div class="prochead">
+            Свойства устройства (<code>getprop</code>). Жми <b>обновить</b> после подключения.
+          </div>
+          <div class="procbar">
+            <button class="chip" id="devRefresh">обновить</button>
+          </div>
+          <div class="proclist" id="devList">
+            <div class="inforow"><span class="k">—</span><span class="v">нет данных</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- screen -->
+      <div id="view-screen" class="view hidden">
+        <div class="proc">
+          <div class="prochead">
+            Скриншот экрана устройства (<code>screencap</code>). Нужен Android 7+ (служба <code>exec:</code>).
+          </div>
+          <div class="procbar">
+            <button class="chip" id="shotBtn">сделать скриншот</button>
+            <a class="chip" id="shotDl" style="display: none; text-decoration: none">скачать .png</a>
+          </div>
+          <div class="proclist" style="padding: 14px; text-align: center">
+            <div id="shotEmpty" class="kv" style="padding: 24px 0">нет снимка</div>
+            <img
+              id="shotImg"
+              alt="screenshot"
+              style="display: none; max-width: 100%; border: 1px solid var(--line); border-radius: 8px"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- files -->
+      <div id="view-files" class="view hidden">
+        <div class="proc">
+          <div class="prochead">
+            Передача файлов через <code>sync:</code>. Пути — на устройстве, напр. <code>/sdcard/</code>.
+          </div>
+          <div class="proclist" style="padding: 12px 14px">
+            <h3
+              style="color: var(--fg); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 4px 0 8px"
+            >
+              скачать с устройства (pull)
+            </h3>
+            <div class="inputwrap" style="margin: 0 0 8px">
+              <span class="prompt" style="color: var(--dim)">↓</span>
+              <input
+                id="pullPath"
+                placeholder="/sdcard/Download/file.bin"
+                autocomplete="off"
+                spellcheck="false"
+                style="flex: 1; background: transparent; border: 0; outline: 0; color: var(--fg); font: inherit; font-size: 16px"
+              />
+            </div>
+            <button class="chip" id="pullBtn">скачать в браузер</button>
+
+            <h3
+              style="color: var(--fg); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 18px 0 8px"
+            >
+              загрузить на устройство (push)
+            </h3>
+            <div class="inputwrap" style="margin: 0 0 8px">
+              <span class="prompt" style="color: var(--dim)">↑</span>
+              <input
+                id="pushDir"
+                value="/sdcard/Download"
+                autocomplete="off"
+                spellcheck="false"
+                style="flex: 1; background: transparent; border: 0; outline: 0; color: var(--fg); font: inherit; font-size: 16px"
+              />
+            </div>
+            <input
+              type="file"
+              id="pushFile"
+              style="color: var(--dim); font: inherit; font-size: 13px; margin-bottom: 8px"
+            /><br />
+            <button class="chip" id="pushBtn">загрузить на устройство</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- help -->
+      <div id="view-help" class="view hidden">
+        <div class="proc">
+          <div class="procinfo" id="helpBody">
+            <h3>Что это</h3>
+            <p>
+              Клиент <b>ADB</b> поверх <b>WebUSB</b> — прямо в браузере, без установки adb на
+              компьютер. Поддерживается в Chrome / Edge на desktop и Android (не в iOS/Safari).
+            </p>
+            <h3>Подготовка телефона</h3>
+            <ul>
+              <li>Включи <b>Параметры разработчика</b> и <b>Отладку по USB</b>.</li>
+              <li>Подключи кабелем, нажми иконку «вилки» сверху, выбери устройство.</li>
+              <li>На телефоне подтверди запрос <b>«Разрешить отладку по USB»</b> (галка «всегда» — чтобы не спрашивал снова).</li>
+            </ul>
+            <h3>Терминал</h3>
+            <p>Любая строка уходит как shell-команда (<code>shell:&lt;строка&gt;</code>), результат — в лог. Примеры:</p>
+            <ul>
+              <li><span class="cmd">getprop ro.product.model</span> — модель</li>
+              <li><span class="cmd">pm list packages -3</span> — сторонние приложения</li>
+              <li><span class="cmd">dumpsys battery</span> — состояние батареи</li>
+              <li><span class="cmd">wm size</span> — разрешение экрана</li>
+              <li><span class="cmd">settings list global</span> — глобальные настройки</li>
+            </ul>
+            <h3>Локальные команды</h3>
+            <ul>
+              <li><span class="cmd">/help</span> — эта справка</li>
+              <li><span class="cmd">/connect</span> — выбрать и подключить устройство</li>
+              <li><span class="cmd">/disconnect</span> — отключить</li>
+              <li><span class="cmd">/info</span> — свойства устройства</li>
+              <li><span class="cmd">/reboot</span> — перезагрузка · <span class="cmd">/reboot bootloader</span> · <span class="cmd">/reboot recovery</span></li>
+              <li><span class="cmd">/key</span> — показать отпечаток локального RSA-ключа</li>
+              <li><span class="cmd">/clear</span> — очистить лог</li>
+            </ul>
+            <h3>Заметки</h3>
+            <p>
+              Ключ RSA генерируется в браузере и хранится в <code>localStorage</code> — после
+              галки «всегда разрешать» телефон запоминает его и больше не спрашивает.
+              Каждая команда — одноразовый <code>shell:</code>-поток; интерактивный pty-shell не
+              используется.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span class="seg">device <b id="fDev">—</b></span>
+        <span class="seg">serial <b id="fSer">—</b></span>
+        <span class="seg">state <b id="fState">offline</b></span>
+        <span class="sp"></span>
+        <span class="seg"><a id="helpLink">/help</a></span>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+      "use strict";
+
+      /* ================= helpers ================= */
+      var $ = function (s) {
+        return document.querySelector(s);
+      };
+      var enc = new TextEncoder();
+      var dec = new TextDecoder();
+
+      function toast(m) {
+        var t = $("#toast");
+        t.textContent = m;
+        t.classList.add("on");
+        clearTimeout(toast._h);
+        toast._h = setTimeout(function () {
+          t.classList.remove("on");
+        }, 1600);
+      }
+
+      function logLine(glyph, text, cls) {
+        var el = $("#log");
+        var ts = new Date().toLocaleTimeString();
+        var line = document.createElement("span");
+        line.className = "ln " + (cls || "");
+        var head = document.createElement("span");
+        head.className = "g";
+        head.textContent = (glyph ? glyph + " " : "") + "[" + ts + "] ";
+        line.appendChild(head);
+        line.appendChild(document.createTextNode(text));
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+      }
+      function logBlock(text, cls) {
+        // multi-line output without per-line timestamps
+        var el = $("#log");
+        var line = document.createElement("span");
+        line.className = "ln " + (cls || "rx");
+        line.textContent = text;
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+      }
+
+      /* ================= RSA (BigInt) for ADB auth ================= */
+      function b64urlToBig(s) {
+        s = s.replace(/-/g, "+").replace(/_/g, "/");
+        while (s.length % 4) s += "=";
+        var bin = atob(s),
+          hex = "";
+        for (var i = 0; i < bin.length; i++) {
+          var h = bin.charCodeAt(i).toString(16);
+          hex += h.length === 1 ? "0" + h : h;
+        }
+        return hex.length ? BigInt("0x" + hex) : 0n;
+      }
+      function bigToBytes(n, len) {
+        var out = new Uint8Array(len);
+        for (var i = len - 1; i >= 0; i--) {
+          out[i] = Number(n & 0xffn);
+          n >>= 8n;
+        }
+        return out;
+      }
+      function modpow(b, e, m) {
+        var r = 1n;
+        b %= m;
+        while (e > 0n) {
+          if (e & 1n) r = (r * b) % m;
+          e >>= 1n;
+          b = (b * b) % m;
+        }
+        return r;
+      }
+      function invmod(a, m) {
+        var or = ((a % m) + m) % m,
+          r = m,
+          os = 1n,
+          s = 0n;
+        while (r !== 0n) {
+          var q = or / r;
+          var t = or - q * r;
+          or = r;
+          r = t;
+          t = os - q * s;
+          os = s;
+          s = t;
+        }
+        return ((os % m) + m) % m;
+      }
+
+      var ADB_KEY = null; // {n, d, nBE(Uint8Array256), pubBlobB64}
+
+      async function loadOrCreateKey() {
+        var jwk = null;
+        try {
+          var saved = localStorage.getItem("adb-webusb-key");
+          if (saved) jwk = JSON.parse(saved);
+        } catch (e) {}
+        if (!jwk) {
+          var kp = await crypto.subtle.generateKey(
+            {
+              name: "RSASSA-PKCS1-v1_5",
+              modulusLength: 2048,
+              publicExponent: new Uint8Array([1, 0, 1]),
+              hash: "SHA-1",
+            },
+            true,
+            ["sign", "verify"]
+          );
+          jwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
+          try {
+            localStorage.setItem("adb-webusb-key", JSON.stringify(jwk));
+          } catch (e) {}
+        }
+        var n = b64urlToBig(jwk.n),
+          d = b64urlToBig(jwk.d);
+        ADB_KEY = { n: n, d: d, jwk: jwk };
+        ADB_KEY.nBE = bigToBytes(n, 256);
+        ADB_KEY.pubBlobB64 = buildAndroidPubkey(n);
+        return ADB_KEY;
+      }
+
+      // Android RSAPublicKey blob (524 bytes) -> base64 + " adb@webusb"
+      function buildAndroidPubkey(n) {
+        var LEN = 256,
+          WORDS = 64;
+        var buf = new ArrayBuffer(4 + 4 + LEN + LEN + 4);
+        var dv = new DataView(buf);
+        var u8 = new Uint8Array(buf);
+        var off = 0;
+        dv.setUint32(off, WORDS, true);
+        off += 4;
+        var r32 = 1n << 32n;
+        var n0inv = (r32 - invmod(n % r32, r32)) % r32; // -1/n[0] mod 2^32
+        dv.setUint32(off, Number(n0inv), true);
+        off += 4;
+        // modulus little-endian
+        var nBE = bigToBytes(n, LEN);
+        for (var i = 0; i < LEN; i++) u8[off + i] = nBE[LEN - 1 - i];
+        off += LEN;
+        // rr = (2^2048)^2 mod n, little-endian
+        var R = 1n << 2048n;
+        var rr = (R * R) % n;
+        var rrBE = bigToBytes(rr, LEN);
+        for (var j = 0; j < LEN; j++) u8[off + j] = rrBE[LEN - 1 - j];
+        off += LEN;
+        dv.setUint32(off, 65537, true);
+        var bin = "";
+        for (var k = 0; k < u8.length; k++) bin += String.fromCharCode(u8[k]);
+        return btoa(bin) + " adb@webusb";
+      }
+
+      // sign a 20-byte token (ADB: PKCS#1 v1.5 with SHA-1 DigestInfo, raw RSA)
+      var SHA1_PREFIX = [
+        0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14,
+      ];
+      function signToken(token) {
+        var k = 256;
+        var T = SHA1_PREFIX.concat(Array.from(token));
+        var em = new Uint8Array(k);
+        em[0] = 0x00;
+        em[1] = 0x01;
+        var psLen = k - 3 - T.length;
+        for (var i = 0; i < psLen; i++) em[2 + i] = 0xff;
+        em[2 + psLen] = 0x00;
+        for (var j = 0; j < T.length; j++) em[3 + psLen + j] = T[j];
+        var m = 0n;
+        for (var x = 0; x < em.length; x++) m = (m << 8n) | BigInt(em[x]);
+        var s = modpow(m, ADB_KEY.d, ADB_KEY.n);
+        return bigToBytes(s, k);
+      }
+
+      /* ================= ADB protocol over WebUSB ================= */
+      var A_CNXN = 0x4e584e43,
+        A_AUTH = 0x48545541,
+        A_OPEN = 0x4e45504f,
+        A_OKAY = 0x59414b4f,
+        A_CLSE = 0x45534c43,
+        A_WRTE = 0x45545257;
+      var AUTH_TOKEN = 1,
+        AUTH_SIG = 2,
+        AUTH_RSAPUB = 3;
+      var VERSION = 0x01000001,
+        MAXDATA = 256 * 1024;
+
+      var ADB = {
+        dev: null,
+        ifNum: 0,
+        epIn: 0,
+        epOut: 0,
+        maxData: MAXDATA,
+        connected: false,
+        banner: "",
+        localIdSeq: 1,
+        reading: false,
+      };
+
+      function checksum(data) {
+        var s = 0;
+        for (var i = 0; i < data.length; i++) s = (s + data[i]) >>> 0;
+        return s >>> 0;
+      }
+
+      function packMessage(cmd, arg0, arg1, data) {
+        data = data || new Uint8Array(0);
+        var hdr = new ArrayBuffer(24);
+        var dv = new DataView(hdr);
+        dv.setUint32(0, cmd >>> 0, true);
+        dv.setUint32(4, arg0 >>> 0, true);
+        dv.setUint32(8, arg1 >>> 0, true);
+        dv.setUint32(12, data.length >>> 0, true);
+        dv.setUint32(16, checksum(data), true);
+        dv.setUint32(20, (cmd ^ 0xffffffff) >>> 0, true);
+        return { hdr: new Uint8Array(hdr), data: data };
+      }
+
+      async function sendMessage(cmd, arg0, arg1, data) {
+        var m = packMessage(cmd, arg0, arg1, data);
+        await ADB.dev.transferOut(ADB.epOut, m.hdr);
+        if (m.data.length) {
+          // chunk by maxData
+          var off = 0;
+          while (off < m.data.length) {
+            var end = Math.min(off + ADB.maxData, m.data.length);
+            await ADB.dev.transferOut(ADB.epOut, m.data.slice(off, end));
+            off = end;
+          }
+        }
+      }
+
+      async function readExact(len) {
+        var out = new Uint8Array(len),
+          got = 0;
+        while (got < len) {
+          var res = await ADB.dev.transferIn(ADB.epIn, len - got);
+          if (res.status !== "ok") throw new Error("USB in: " + res.status);
+          var chunk = new Uint8Array(res.data.buffer, res.data.byteOffset, res.data.byteLength);
+          out.set(chunk.subarray(0, Math.min(chunk.length, len - got)), got);
+          got += chunk.length;
+        }
+        return out;
+      }
+
+      async function readMessage() {
+        var hb = await readExact(24);
+        var dv = new DataView(hb.buffer);
+        var msg = {
+          cmd: dv.getUint32(0, true),
+          arg0: dv.getUint32(4, true),
+          arg1: dv.getUint32(8, true),
+          len: dv.getUint32(12, true),
+          data: new Uint8Array(0),
+        };
+        if (msg.len > 0) msg.data = await readExact(msg.len);
+        return msg;
+      }
+
+      /* stream layer (flow-controlled) */
+      var streams = {};
+
+      function AdbStream(localId) {
+        this.localId = localId;
+        this.remoteId = 0;
+        this.isOpen = false;
+        this.closed = false;
+        this.openResolve = null;
+        this._rej = null;
+        this.okayQueue = [];
+        this.readChunks = [];
+        this.readAvail = 0;
+        this.readWaiters = [];
+        this.closeWaiters = [];
+      }
+      AdbStream.prototype._take = function (n) {
+        var out = new Uint8Array(n),
+          off = 0;
+        while (off < n && this.readChunks.length) {
+          var c = this.readChunks[0];
+          var take = Math.min(c.length, n - off);
+          out.set(c.subarray(0, take), off);
+          off += take;
+          if (take === c.length) this.readChunks.shift();
+          else this.readChunks[0] = c.subarray(take);
+        }
+        this.readAvail -= off;
+        return out.subarray(0, off);
+      };
+      AdbStream.prototype._pump = function () {
+        while (this.readWaiters.length) {
+          var w = this.readWaiters[0];
+          if (w.n === -1) {
+            if (this.readAvail > 0) {
+              this.readWaiters.shift();
+              w.resolve(this._take(this.readAvail));
+            } else if (this.closed) {
+              this.readWaiters.shift();
+              w.resolve(new Uint8Array(0));
+            } else break;
+          } else {
+            if (this.readAvail >= w.n) {
+              this.readWaiters.shift();
+              w.resolve(this._take(w.n));
+            } else if (this.closed) {
+              this.readWaiters.shift();
+              w.resolve(this._take(this.readAvail));
+            } else break;
+          }
+        }
+        if (this.closed) {
+          while (this.closeWaiters.length) this.closeWaiters.shift()();
+        }
+      };
+      AdbStream.prototype.onData = function (d) {
+        this.readChunks.push(d);
+        this.readAvail += d.length;
+        this._pump();
+      };
+      AdbStream.prototype.read = function (n) {
+        var self = this;
+        return new Promise(function (res) {
+          self.readWaiters.push({ n: n, resolve: res });
+          self._pump();
+        });
+      };
+      AdbStream.prototype.readSome = function () {
+        var self = this;
+        return new Promise(function (res) {
+          self.readWaiters.push({ n: -1, resolve: res });
+          self._pump();
+        });
+      };
+      AdbStream.prototype.readAll = function (asText) {
+        var self = this;
+        return new Promise(function (res) {
+          function done() {
+            var buf = self._take(self.readAvail);
+            res(asText ? dec.decode(buf) : buf);
+          }
+          if (self.closed) done();
+          else self.closeWaiters.push(done);
+          self._pump();
+        });
+      };
+      AdbStream.prototype._writeFrame = function (chunk) {
+        var self = this;
+        return new Promise(function (res, rej) {
+          self.okayQueue.push(res);
+          sendMessage(A_WRTE, self.localId, self.remoteId, chunk).catch(rej);
+        });
+      };
+      AdbStream.prototype.write = function (data) {
+        var self = this;
+        return (async function () {
+          if (data.length === 0) {
+            await self._writeFrame(new Uint8Array(0));
+            return;
+          }
+          var off = 0;
+          while (off < data.length) {
+            var end = Math.min(off + ADB.maxData, data.length);
+            await self._writeFrame(data.subarray(off, end));
+            off = end;
+          }
+        })();
+      };
+      AdbStream.prototype.close = function () {
+        if (this.closed) return Promise.resolve();
+        this.closed = true;
+        this._pump();
+        return sendMessage(A_CLSE, this.localId, this.remoteId).catch(function () {});
+      };
+
+      async function dispatchLoop() {
+        ADB.reading = true;
+        try {
+          while (ADB.connected) {
+            var m = await readMessage();
+            var st = streams[m.arg1];
+            if (m.cmd === A_WRTE) {
+              if (st) {
+                if (!st.isOpen) {
+                  st.isOpen = true;
+                  if (st.openResolve) st.openResolve();
+                }
+                st.onData(m.data);
+              }
+              await sendMessage(A_OKAY, m.arg1, m.arg0);
+            } else if (m.cmd === A_OKAY) {
+              if (st) {
+                st.remoteId = m.arg0;
+                if (!st.isOpen) {
+                  st.isOpen = true;
+                  if (st.openResolve) st.openResolve();
+                } else if (st.okayQueue.length) st.okayQueue.shift()();
+              }
+            } else if (m.cmd === A_CLSE) {
+              if (st) {
+                if (!st.isOpen) {
+                  st.isOpen = true;
+                  if (st.openResolve) st.openResolve();
+                }
+                st.closed = true;
+                st._pump();
+                delete streams[m.arg1];
+              }
+            }
+          }
+        } catch (e) {
+          if (ADB.connected) {
+            logLine("!", "обрыв связи: " + e.message, "err");
+            setDisconnected();
+          }
+        }
+        ADB.reading = false;
+      }
+
+      async function doConnectHandshake() {
+        await sendMessage(A_CNXN, VERSION, MAXDATA, enc.encode("host::features=shell_v2,cmd\0"));
+        var tries = 0;
+        while (true) {
+          var m = await readMessage();
+          if (m.cmd === A_CNXN) {
+            ADB.maxData = m.arg1 || MAXDATA;
+            ADB.banner = dec.decode(m.data).replace(/\0+$/, "");
+            ADB.connected = true;
+            return true;
+          }
+          if (m.cmd === A_AUTH && m.arg0 === AUTH_TOKEN) {
+            if (tries === 0) {
+              // first: try signing the token with our key
+              var sig = signToken(m.data);
+              await sendMessage(A_AUTH, AUTH_SIG, 0, sig);
+              tries++;
+            } else {
+              // signature not accepted -> offer public key, user approves on device
+              logLine("*", "подтверди запрос отладки на экране телефона…", "note");
+              setState("wait", "ждём подтверждения на телефоне");
+              $("#fState").textContent = "unauthorized";
+              await sendMessage(A_AUTH, AUTH_RSAPUB, 0, enc.encode(ADB_KEY.pubBlobB64 + "\0"));
+              tries++;
+            }
+          } else {
+            throw new Error("неожиданный ответ 0x" + m.cmd.toString(16));
+          }
+        }
+      }
+
+      function openStream(dest) {
+        var localId = ADB.localIdSeq++;
+        var st = new AdbStream(localId);
+        streams[localId] = st;
+        return new Promise(function (resolve, reject) {
+          st.openResolve = function () {
+            resolve(st);
+          };
+          st._rej = reject;
+          sendMessage(A_OPEN, localId, 0, enc.encode(dest + "\0")).catch(reject);
+        });
+      }
+
+      // one-shot shell command: collect text output until stream closes
+      async function shellExec(command) {
+        var st = await openStream("shell:" + command);
+        return st.readAll(true);
+      }
+      // raw service, collect binary output until close (exec:, framebuffer, …)
+      async function execBinary(service) {
+        var st = await openStream(service);
+        return st.readAll(false);
+      }
+
+      /* ---- sync: file transfer ---- */
+      function le32(n) {
+        var b = new Uint8Array(4);
+        new DataView(b.buffer).setUint32(0, n >>> 0, true);
+        return b;
+      }
+      function syncPacket(id, len) {
+        var b = new Uint8Array(8);
+        b.set(enc.encode(id), 0);
+        b.set(le32(len), 4);
+        return b;
+      }
+      async function syncReadExact(st, n) {
+        var out = new Uint8Array(n),
+          got = 0;
+        while (got < n) {
+          var chunk = await st.read(n - got);
+          if (chunk.length === 0) throw new Error("sync: поток закрыт");
+          out.set(chunk, got);
+          got += chunk.length;
+        }
+        return out;
+      }
+      async function pullFile(path) {
+        var st = await openStream("sync:");
+        var p = enc.encode(path);
+        var req = new Uint8Array(8 + p.length);
+        req.set(syncPacket("RECV", p.length), 0);
+        req.set(p, 8);
+        await st.write(req);
+        var parts = [],
+          total = 0;
+        while (true) {
+          var hdr = await syncReadExact(st, 8);
+          var id = dec.decode(hdr.subarray(0, 4));
+          var len = new DataView(hdr.buffer, hdr.byteOffset).getUint32(4, true);
+          if (id === "DATA") {
+            parts.push(await syncReadExact(st, len));
+            total += len;
+          } else if (id === "DONE") {
+            break;
+          } else if (id === "FAIL") {
+            var msg = await syncReadExact(st, len);
+            await st.close();
+            throw new Error(dec.decode(msg) || "FAIL");
+          } else {
+            await st.close();
+            throw new Error("sync: ответ " + id);
+          }
+        }
+        await st.write(syncPacket("QUIT", 0)).catch(function () {});
+        await st.close();
+        var out = new Uint8Array(total),
+          off = 0;
+        parts.forEach(function (x) {
+          out.set(x, off);
+          off += x.length;
+        });
+        return out;
+      }
+      async function pushFile(path, bytes, mode) {
+        mode = mode || 33188; // 0100644
+        var st = await openStream("sync:");
+        var meta = enc.encode(path + "," + mode);
+        var req = new Uint8Array(8 + meta.length);
+        req.set(syncPacket("SEND", meta.length), 0);
+        req.set(meta, 8);
+        await st.write(req);
+        var off = 0,
+          CH = 64 * 1024;
+        while (off < bytes.length) {
+          var end = Math.min(off + CH, bytes.length);
+          var chunk = bytes.subarray(off, end);
+          var frame = new Uint8Array(8 + chunk.length);
+          frame.set(syncPacket("DATA", chunk.length), 0);
+          frame.set(chunk, 8);
+          await st.write(frame);
+          off = end;
+        }
+        await st.write(syncPacket("DONE", Math.floor(Date.now() / 1000)));
+        var rh = await syncReadExact(st, 8);
+        var rid = dec.decode(rh.subarray(0, 4));
+        var rlen = new DataView(rh.buffer, rh.byteOffset).getUint32(4, true);
+        if (rid === "FAIL") {
+          var m = await syncReadExact(st, rlen);
+          await st.close();
+          throw new Error(dec.decode(m) || "FAIL");
+        }
+        await st.write(syncPacket("QUIT", 0)).catch(function () {});
+        await st.close();
+        return true;
+      }
+
+      /* ---- interactive shell ---- */
+      var ISH = { st: null, dec: null };
+      async function startInteractive() {
+        if (!ADB.connected) {
+          logLine("!", "нет подключения", "err");
+          return;
+        }
+        if (ISH.st) {
+          logLine("*", "интерактивный shell уже запущен", "note");
+          return;
+        }
+        try {
+          var st = await openStream("shell:");
+          ISH.st = st;
+          ISH.dec = new TextDecoder();
+          logLine("*", "интерактивный shell · ввод уходит в сессию, /exit — выход", "note");
+          updatePrompt();
+          (async function () {
+            while (!st.closed) {
+              var chunk = await st.readSome();
+              if (chunk.length) logBlock(ISH.dec.decode(chunk, { stream: true }), "rx");
+              else break;
+            }
+            if (ISH.st === st) {
+              ISH.st = null;
+              updatePrompt();
+              logLine("!", "shell закрыт", "note");
+            }
+          })();
+        } catch (e) {
+          logLine("!", "shell: " + e.message, "err");
+        }
+      }
+      function stopInteractive() {
+        if (ISH.st) {
+          var s = ISH.st;
+          ISH.st = null;
+          s.close();
+          updatePrompt();
+          logLine("!", "shell закрыт", "note");
+        } else {
+          logLine("*", "интерактивный shell не запущен", "note");
+        }
+      }
+      function updatePrompt() {
+        var p = document.querySelector(".prompt");
+        if (p) p.textContent = ISH.st ? "‖" : "❯";
+      }
+
+      /* ---- screenshot / files handlers ---- */
+      async function takeScreenshot() {
+        if (!ADB.connected) {
+          toast("нет подключения");
+          return;
+        }
+        var btn = $("#shotBtn"),
+          old = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "снимаю…";
+        try {
+          var png = await execBinary("exec:screencap -p");
+          if (png.length < 8) throw new Error("пустой кадр (нет службы exec screencap?)");
+          var url = URL.createObjectURL(new Blob([png], { type: "image/png" }));
+          var img = $("#shotImg");
+          img.src = url;
+          img.style.display = "block";
+          $("#shotEmpty").style.display = "none";
+          var dl = $("#shotDl");
+          dl.href = url;
+          dl.download = "screen-" + Date.now() + ".png";
+          dl.style.display = "inline-block";
+          logLine("<", "скриншот " + png.length + " Б", "ok");
+        } catch (e) {
+          toast(e.message);
+          logLine("!", "screencap: " + e.message, "err");
+        }
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+      async function doPull() {
+        var path = $("#pullPath").value.trim();
+        if (!path) {
+          toast("укажи путь");
+          return;
+        }
+        if (!ADB.connected) {
+          toast("нет подключения");
+          return;
+        }
+        var btn = $("#pullBtn");
+        btn.disabled = true;
+        try {
+          var bytes = await pullFile(path);
+          var name = path.split("/").pop() || "file";
+          var url = URL.createObjectURL(new Blob([bytes]));
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = name;
+          a.click();
+          setTimeout(function () {
+            URL.revokeObjectURL(url);
+          }, 4000);
+          toast("скачано " + name + " · " + bytes.length + " Б");
+          logLine("<", "pull " + path + " → " + bytes.length + " Б", "ok");
+        } catch (e) {
+          toast(e.message);
+          logLine("!", "pull: " + e.message, "err");
+        }
+        btn.disabled = false;
+      }
+      async function doPush() {
+        var f = $("#pushFile").files[0];
+        if (!f) {
+          toast("выбери файл");
+          return;
+        }
+        if (!ADB.connected) {
+          toast("нет подключения");
+          return;
+        }
+        var dir = $("#pushDir").value.trim() || "/sdcard";
+        if (dir.slice(-1) === "/") dir = dir.slice(0, -1);
+        var target = dir + "/" + f.name;
+        var btn = $("#pushBtn");
+        btn.disabled = true;
+        try {
+          var buf = new Uint8Array(await f.arrayBuffer());
+          await pushFile(target, buf);
+          toast("загружено → " + target);
+          logLine("<", "push " + f.name + " → " + target + " · " + buf.length + " Б", "ok");
+        } catch (e) {
+          toast(e.message);
+          logLine("!", "push: " + e.message, "err");
+        }
+        btn.disabled = false;
+      }
+
+      /* ================= UI wiring ================= */
+      function setState(kind, txt) {
+        var p = $("#statePill");
+        p.className = "pill" + (kind ? " " + kind : "");
+        $("#stateTxt").textContent = txt;
+      }
+      function setDisconnected() {
+        ADB.connected = false;
+        ISH.st = null;
+        setState("", "не подключено");
+        $("#btnConn").classList.remove("conn-on");
+        $("#cmd").disabled = true;
+        $("#cmd").placeholder = "подключи устройство, затем: shell-команда или /help";
+        $("#fState").textContent = "offline";
+        if (typeof updatePrompt === "function") updatePrompt();
+      }
+
+      async function connect() {
+        if (!("usb" in navigator)) {
+          logLine("!", "WebUSB не поддерживается этим браузером (нужен Chrome/Edge)", "err");
+          toast("нет WebUSB");
+          return;
+        }
+        try {
+          await loadOrCreateKey();
+          setState("wait", "выбор устройства…");
+          var dev = await navigator.usb.requestDevice({
+            filters: [{ classCode: 0xff, subclassCode: 0x42, protocolCode: 0x01 }],
+          });
+          await openDevice(dev);
+        } catch (e) {
+          if (e && e.name === "NotFoundError") {
+            setState("", "не подключено");
+            return;
+          }
+          logLine("!", "ошибка подключения: " + e.message, "err");
+          setDisconnected();
+        }
+      }
+
+      async function openDevice(dev) {
+        ADB.dev = dev;
+        await dev.open();
+        if (dev.configuration === null) await dev.selectConfiguration(1);
+        // find ADB interface + bulk endpoints
+        var found = null;
+        dev.configuration.interfaces.forEach(function (iface) {
+          iface.alternates.forEach(function (alt) {
+            if (alt.interfaceClass === 0xff && alt.interfaceSubclass === 0x42 && alt.interfaceProtocol === 0x01) {
+              found = { num: iface.interfaceNumber, alt: alt };
+            }
+          });
+        });
+        if (!found) throw new Error("ADB-интерфейс не найден (включена ли отладка по USB?)");
+        ADB.ifNum = found.num;
+        await dev.claimInterface(ADB.ifNum);
+        found.alt.endpoints.forEach(function (ep) {
+          if (ep.type === "bulk" && ep.direction === "in") ADB.epIn = ep.endpointNumber;
+          if (ep.type === "bulk" && ep.direction === "out") ADB.epOut = ep.endpointNumber;
+        });
+        var name = (dev.productName || "USB-device") + (dev.manufacturerName ? " · " + dev.manufacturerName : "");
+        logLine(">", "устройство: " + name, "note");
+        setState("wait", "рукопожатие ADB…");
+        await doConnectHandshake();
+        // success
+        logLine("<", "подключено · " + ADB.banner, "ok");
+        setState("on", "подключено");
+        $("#btnConn").classList.add("conn-on");
+        $("#cmd").disabled = false;
+        $("#cmd").placeholder = "shell-команда (getprop, pm list packages) или /help";
+        $("#cmd").focus();
+        $("#fDev").textContent = dev.productName || "—";
+        $("#fSer").textContent = dev.serialNumber || "—";
+        $("#fState").textContent = "device";
+        dispatchLoop();
+        refreshDeviceInfo();
+      }
+
+      async function disconnect() {
+        try {
+          ADB.connected = false;
+          if (ADB.dev) {
+            try {
+              await ADB.dev.releaseInterface(ADB.ifNum);
+            } catch (e) {}
+            await ADB.dev.close();
+          }
+        } catch (e) {}
+        ADB.dev = null;
+        streams = {};
+        setDisconnected();
+        logLine("!", "отключено", "note");
+      }
+
+      /* command handling */
+      async function runCommand(raw) {
+        var line = raw.replace(/\r?\n$/, "");
+        var trimmed = line.trim();
+        if (trimmed[0] === "/") {
+          return runLocal(trimmed);
+        }
+        if (ISH.st) {
+          // interactive mode: feed the line straight into the live shell
+          try {
+            await ISH.st.write(enc.encode(line + "\n"));
+          } catch (e) {
+            logLine("!", "shell: " + e.message, "err");
+          }
+          return;
+        }
+        if (!trimmed) return;
+        if (!ADB.connected) {
+          logLine("!", "нет подключения — нажми вилку сверху", "err");
+          return;
+        }
+        logLine("❯", trimmed, "tx");
+        try {
+          var out = await shellExec(trimmed);
+          if (out.length) logBlock(out.replace(/\s+$/, ""), "rx");
+          else logLine("<", "(пусто)", "g");
+        } catch (e) {
+          logLine("!", "ошибка: " + e.message, "err");
+        }
+      }
+
+      async function runLocal(line) {
+        var parts = line.slice(1).split(/\s+/);
+        var c = parts[0].toLowerCase();
+        if (c === "shell") {
+          startInteractive();
+          return;
+        }
+        if (c === "exit") {
+          stopInteractive();
+          return;
+        }
+        if (c === "help") {
+          switchView("help");
+          return;
+        }
+        if (c === "clear") {
+          $("#log").innerHTML = "";
+          return;
+        }
+        if (c === "connect") {
+          connect();
+          return;
+        }
+        if (c === "disconnect") {
+          disconnect();
+          return;
+        }
+        if (c === "info") {
+          switchView("dev");
+          refreshDeviceInfo();
+          return;
+        }
+        if (c === "key") {
+          if (!ADB_KEY) await loadOrCreateKey();
+          var fp = await keyFingerprint();
+          logLine("*", "RSA key fingerprint: " + fp, "note");
+          return;
+        }
+        if (c === "reboot") {
+          if (!ADB.connected) {
+            logLine("!", "нет подключения", "err");
+            return;
+          }
+          var mode = parts[1] || "";
+          logLine("❯", "reboot " + mode, "tx");
+          try {
+            await openStream("reboot:" + mode);
+            logLine("<", "команда перезагрузки отправлена", "ok");
+          } catch (e) {
+            logLine("!", e.message, "err");
+          }
+          return;
+        }
+        logLine("!", "неизвестная команда " + line + " — см. /help", "err");
+      }
+
+      async function keyFingerprint() {
+        var hb = await crypto.subtle.digest("SHA-256", ADB_KEY.nBE);
+        var b = new Uint8Array(hb).slice(0, 8),
+          s = [];
+        for (var i = 0; i < b.length; i++) {
+          var h = b[i].toString(16);
+          s.push(h.length === 1 ? "0" + h : h);
+        }
+        return s.join(":");
+      }
+
+      /* device info */
+      var DEV_PROPS = [
+        ["модель", "ro.product.model"],
+        ["бренд", "ro.product.brand"],
+        ["устройство", "ro.product.device"],
+        ["Android", "ro.build.version.release"],
+        ["API", "ro.build.version.sdk"],
+        ["сборка", "ro.build.display.id"],
+        ["security patch", "ro.build.version.security_patch"],
+        ["abi", "ro.product.cpu.abi"],
+        ["serial", "ro.serialno"],
+      ];
+      async function refreshDeviceInfo() {
+        if (!ADB.connected) return;
+        var list = $("#devList");
+        list.innerHTML = '<div class="inforow"><span class="k">—</span><span class="v">чтение…</span></div>';
+        try {
+          var out = await shellExec("getprop");
+          var map = {};
+          out.split("\n").forEach(function (ln) {
+            var m = ln.match(/^\[([^\]]+)\]:\s*\[([^\]]*)\]/);
+            if (m) map[m[1]] = m[2];
+          });
+          list.innerHTML = "";
+          DEV_PROPS.forEach(function (p) {
+            var row = document.createElement("div");
+            row.className = "inforow";
+            row.innerHTML =
+              '<span class="k">' + p[0] + "</span><span class='v'></span>";
+            row.querySelector(".v").textContent = map[p[1]] || "—";
+            list.appendChild(row);
+          });
+        } catch (e) {
+          list.innerHTML = '<div class="inforow"><span class="k">ошибка</span><span class="v"></span></div>';
+          list.querySelector(".v").textContent = e.message;
+        }
+      }
+
+      /* chips */
+      var QUICK = [
+        "getprop ro.product.model",
+        "pm list packages -3",
+        "dumpsys battery",
+        "wm size",
+        "df -h",
+        "/shell",
+        "/info",
+      ];
+      function buildChips() {
+        var box = $("#chips");
+        QUICK.forEach(function (q) {
+          var b = document.createElement("button");
+          b.className = "chip";
+          b.textContent = q;
+          b.onclick = function () {
+            $("#cmd").value = q;
+            $("#cmd").focus();
+          };
+          box.appendChild(b);
+        });
+      }
+
+      /* tabs */
+      function switchView(v) {
+        document.querySelectorAll(".tab").forEach(function (t) {
+          t.classList.toggle("on", t.dataset.view === v);
+        });
+        ["term", "dev", "screen", "files", "help"].forEach(function (name) {
+          $("#view-" + name).classList.toggle("hidden", name !== v);
+        });
+      }
+
+      /* ================= init ================= */
+      function init() {
+        buildChips();
+        document.querySelectorAll(".tab").forEach(function (t) {
+          t.onclick = function () {
+            switchView(t.dataset.view);
+          };
+        });
+        $("#btnConn").onclick = function () {
+          if (ADB.connected) disconnect();
+          else connect();
+        };
+        $("#btnClear").onclick = function () {
+          $("#log").innerHTML = "";
+        };
+        $("#btnTheme").onclick = function () {
+          var cur = document.documentElement.getAttribute("data-theme");
+          var next = cur === "light" ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", next);
+          try {
+            localStorage.setItem("adb-webusb-theme", next);
+          } catch (e) {}
+        };
+        $("#helpLink").onclick = function (e) {
+          e.preventDefault();
+          switchView("help");
+        };
+        $("#devRefresh").onclick = refreshDeviceInfo;
+        $("#shotBtn").onclick = takeScreenshot;
+        $("#pullBtn").onclick = doPull;
+        $("#pushBtn").onclick = doPush;
+        $("#cmd").addEventListener("keydown", function (e) {
+          if (e.key === "Enter") {
+            var v = this.value;
+            this.value = "";
+            runCommand(v);
+          }
+        });
+        // help card clickable commands
+        $("#helpBody").addEventListener("click", function (e) {
+          if (e.target.classList.contains("cmd")) {
+            var txt = e.target.textContent;
+            switchView("term");
+            $("#cmd").value = txt;
+            $("#cmd").focus();
+          }
+        });
+        // theme from storage
+        try {
+          var th = localStorage.getItem("adb-webusb-theme");
+          if (th) document.documentElement.setAttribute("data-theme", th);
+        } catch (e) {}
+        // reconnect previously granted device automatically
+        if ("usb" in navigator) {
+          navigator.usb.addEventListener("disconnect", function (ev) {
+            if (ADB.dev && ev.device === ADB.dev) {
+              logLine("!", "устройство отсоединено", "note");
+              setDisconnected();
+            }
+          });
+        } else {
+          logLine("!", "WebUSB недоступен — открой в Chrome/Edge (desktop или Android)", "err");
+          $("#btnConn").disabled = true;
+        }
+        logLine("*", "готов. нажми иконку вилки сверху, чтобы выбрать устройство. /help — справка.", "note");
+      }
+      init();
+    </script>
+  </body>
+</html>
