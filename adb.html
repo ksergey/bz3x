@@ -1,0 +1,1107 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <title>bz3x · adb prototype</title>
+    <style>
+      * { box-sizing: border-box; }
+      :root {
+        --bg: #0b0b0c;
+        --panel: #101012;
+        --line: #242428;
+        --fg: #e4e4e6;
+        --dim: #8a8a92;
+        --faint: #5b5b63;
+        --accent: #7fd4c1;
+        --accent2: #6ca6ff;
+        --tx: #7fd4c1;
+        --rx: #aeb6c2;
+        --note: #d7b36a;
+        --ok: #8fe0a0;
+        --err: #e06c75;
+        --pill-bg: #141417;
+        --pill-line: #2c2c32;
+        --btn-bg: #17171a;
+        --btn-line: #2c2c32;
+      }
+      html[data-theme="light"] {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --line: #e2e4ea;
+        --fg: #15171c;
+        --dim: #5c6270;
+        --faint: #9aa0ad;
+        --accent: #0f8d78;
+        --accent2: #2563c9;
+        --tx: #0f8d78;
+        --rx: #2b313c;
+        --note: #9a6a12;
+        --ok: #1a7f3c;
+        --err: #c0392b;
+        --pill-bg: #eef0f4;
+        --pill-line: #d7dae1;
+        --btn-bg: #fbfcfe;
+        --btn-line: #d7dae1;
+      }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .app {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        height: 100vh;
+        height: 100dvh;
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 10px;
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 2px 4px;
+      }
+      .brand { font-weight: 700; letter-spacing: 0.5px; }
+      .brand .b2 { color: var(--dim); font-weight: 400; }
+      .spacer { flex: 1; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: var(--pill-bg);
+        border: 1px solid var(--pill-line);
+        color: var(--dim);
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--faint);
+      }
+      .pill.on .dot { background: var(--ok); }
+      .pill.on { color: var(--fg); }
+      .hint {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 6px 10px;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      .hint code {
+        color: var(--fg);
+        background: var(--pill-bg);
+        border: 1px solid var(--pill-line);
+        padding: 0 4px;
+        border-radius: 4px;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        font: inherit;
+        color: var(--fg);
+        background: var(--btn-bg);
+        border: 1px solid var(--btn-line);
+        border-radius: 8px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+      .btn:hover { border-color: var(--accent2); }
+      .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+      .btn.primary { border-color: var(--accent2); color: var(--accent2); }
+      .btn.danger { color: var(--err); border-color: currentColor; }
+      .btn.sm { padding: 3px 9px; font-size: 12px; }
+      .cmd {
+        flex: 1;
+        min-width: 260px;
+        font: inherit;
+        color: var(--fg);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 10px;
+      }
+      .cmd:focus { outline: none; border-color: var(--accent2); }
+      .log {
+        flex: 1;
+        min-height: 120px;
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .ln { color: var(--rx); }
+      .ln.tx { color: var(--tx); }
+      .ln.ok { color: var(--ok); }
+      .ln.note { color: var(--note); }
+      .ln.err { color: var(--err); }
+      .ln .d { color: var(--faint); }
+      .out {
+        margin: 0;
+        height: 30%;
+        min-height: 110px;
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        white-space: pre-wrap;
+        word-break: break-all;
+        color: var(--fg);
+      }
+      .dim { color: var(--dim); }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="head">
+        <span class="brand">bz3x · <span class="b2">adb prototype</span></span>
+        <span class="spacer"></span>
+        <span class="pill" id="status">
+          <span class="dot"></span>
+          <span id="statusText">не подключено</span>
+        </span>
+      </header>
+
+      <div class="hint">
+        <div>
+          1) ADB включается по UDS: «включение ADB» в
+          <code>index.html</code> или <code>31 01 AE65 01</code> в <code>tool.html</code>.
+        </div>
+        <div>
+          2) Затем кабель ноутбук → USB-порт ГУ и «разрешить USB debugging» на экране.
+        </div>
+        <div>
+          3) Интерфейс ADB монопольный: закрой <code>bz3x-tool</code> и выполни
+          <code>adb kill-server</code>, иначе браузер не сможет захватить USB.
+        </div>
+        <div>
+          4) Нужен Chromium-браузер (Chrome / Edge / Opera; Firefox и Safari — нет).
+          Если <code>navigator.usb</code> отсутствует — открой страницу через
+          <code>http://localhost</code> или HTTPS.
+        </div>
+        <div>
+          Ключ подписи хранится в localStorage браузера. При первой привязке на
+          экране ГУ появится диалог «Разрешить отладку» — подтверди там.
+        </div>
+      </div>
+
+      <div class="bar">
+        <button id="btnConnect" class="btn primary">Подключить USB-устройство</button>
+        <button id="btnDevices" class="btn">Ранее разрешённые</button>
+        <button id="btnForget" class="btn danger">Забыть ключ</button>
+        <span class="dim" id="keyLabel">ключ: —</span>
+      </div>
+
+      <div class="bar">
+        <input
+          id="cmd"
+          class="cmd"
+          type="text"
+          placeholder="shell-команда, напр. getprop ro.build.version.sdk"
+          spellcheck="false"
+          autocomplete="off"
+          disabled
+        />
+        <button id="btnRun" class="btn primary" disabled>Выполнить</button>
+      </div>
+
+      <div class="bar" id="presets"></div>
+
+      <div class="log" id="log"></div>
+      <pre class="out" id="out"></pre>
+    </div>
+
+    <script>
+      (() => {
+        "use strict";
+
+        // --- константы протокола ADB ---
+        const CMD = {
+          Cnxn: 0x4e584e43,
+          Auth: 0x48545541,
+          Open: 0x4e45504f,
+          Okay: 0x59414b4f,
+          Clse: 0x45534c43,
+          Wrte: 0x45545257,
+        };
+        const CMD_NAMES = {
+          0x4e584e43: "CNXN",
+          0x48545541: "AUTH",
+          0x4e45504f: "OPEN",
+          0x59414b4f: "OKAY",
+          0x45534c43: "CLSE",
+          0x45545257: "WRTE",
+        };
+        // версия протокола, начиная с которой adbd не проверяет checksum
+        // и не требует NUL в конце service-строки (Android 9+)
+        const ADB_VERSION = 0x01000001;
+        const HOST_MAX = 1024 * 1024;
+        const AUTH_TOKEN = 1;
+        const AUTH_SIGNATURE = 2;
+        const AUTH_PUBLICKEY = 3;
+        const KEY_STORE = "bz3x_adb_key";
+        // INFO[SHA-1] из RFC 8017, 15 байт — ajb подписывает сырой SHA-1(token)
+        const DIGEST_INFO = new Uint8Array([
+          0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a,
+          0x05, 0x00, 0x04, 0x14,
+        ]);
+
+        const enc = new TextEncoder();
+        const bannerDec = new TextDecoder();
+
+        const state = {
+          device: null,
+          epIn: 0,
+          epOut: 0,
+          epPacketSize: 512,
+          rxBuf: new Uint8Array(0),
+          connected: false,
+          version: ADB_VERSION,
+          maxData: HOST_MAX,
+          nextId: 1,
+          localId: 0,
+          remoteId: 0,
+          busy: false,
+          tokenCount: 0,
+          key: null,
+          decOut: null,
+          outText: "",
+          closing: false,
+        };
+
+        // --- мелкие помощники ---
+        const $ = (id) => {
+          return document.getElementById(id);
+        };
+
+        function log(text, cls) {
+          const box = $("log");
+          const el = document.createElement("div");
+          el.className = "ln" + (cls ? " " + cls : "");
+          el.textContent = text;
+          box.appendChild(el);
+          box.scrollTop = box.scrollHeight;
+        }
+
+        function setStatus(mode) {
+          const pill = $("status");
+          const text = $("statusText");
+          pill.className = "pill" + (mode === "on" ? " on" : "");
+          if (mode === "off") {
+            text.textContent = "не подключено";
+          } else if (mode === "auth") {
+            text.textContent = "авторизация…";
+          } else {
+            text.textContent = "ADB подключён";
+          }
+        }
+
+        function hexOf(bytes, limit) {
+          const n = Math.min(bytes.length, limit || 8);
+          let s = "";
+          for (let i = 0; i < n; i += 1) {
+            s += bytes[i].toString(16).padStart(2, "0") + " ";
+          }
+          if (bytes.length > n) {
+            s += "…";
+          }
+          return s.trim();
+        }
+
+        // --- b64 ---
+        function b64Enc(bytes) {
+          let s = "";
+          const chunk = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunk) {
+            s += String.fromCharCode.apply(
+              null,
+              bytes.subarray(i, i + chunk),
+            );
+          }
+          return btoa(s);
+        }
+
+        function b64ToBytes(s) {
+          const bin = atob(s);
+          const out = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i += 1) {
+            out[i] = bin.charCodeAt(i);
+          }
+          return out;
+        }
+
+        // --- bigint ---
+        function bigFromBe(bytes) {
+          let v = 0n;
+          for (const byte of bytes) {
+            v = (v << 8n) | BigInt(byte);
+          }
+          return v;
+        }
+
+        function beToBytes(value, len) {
+          const out = new Uint8Array(len);
+          let v = value;
+          for (let i = len - 1; i >= 0; i -= 1) {
+            out[i] = Number(v & 0xffn);
+            v >>= 8n;
+          }
+          return out;
+        }
+
+        function leToBytes(value, len) {
+          const out = new Uint8Array(len);
+          let v = value;
+          for (let i = 0; i < len; i += 1) {
+            out[i] = Number(v & 0xffn);
+            v >>= 8n;
+          }
+          return out;
+        }
+
+        // модпow: (base ** exp) % mod — квадраты и умножения
+        function powMod(base, exp, mod) {
+          let r = 1n;
+          let b = base % mod;
+          let e = exp;
+          while (e > 0n) {
+            if (e & 1n) {
+              r = (r * b) % mod;
+            }
+            b = (b * b) % mod;
+            e >>= 1n;
+          }
+          return r;
+        }
+
+        // обратный элемент mod 2^32 (модуль нечётный — Newton, 6 итераций)
+        function modInverse32(aBig) {
+          const M = (1n << 32n);
+          const a = aBig % M;
+          let x = 1n;
+          for (let i = 0; i < 6; i += 1) {
+            x = (x * (2n - (a * x) % M)) % M;
+            if (x < 0n) {
+              x += M;
+            }
+          }
+          return x;
+        }
+
+        // --- RSA-ключ (WebCrypto generateKey → pkcs8 → n,d) ---
+        // совпадает с adb: RSA_sign(NID_sha1) = PKCS#1 v1.5 поверх
+        // DigestInfo(SHA-1, token) — WebCrypto так не умеет, считаем сами
+        function derAt(data, tagOffset) {
+          let len = data[tagOffset + 1];
+          let pos = tagOffset + 2;
+          if (len & 0x80) {
+            const nLen = len & 0x7f;
+            len = 0;
+            for (let i = 0; i < nLen; i += 1) {
+              len = (len << 8) | data[pos];
+              pos += 1;
+            }
+          }
+          return { pos, len, next: pos + len };
+        }
+
+        function pkcs8Extract(bytes) {
+          const outer = derAt(bytes, 0);
+          let p = outer.pos;
+          const version = derAt(bytes, p); // INTEGER 0
+          p = version.next;
+          const alg = derAt(bytes, p); // AlgorithmIdentifier
+          p = alg.next;
+          const octet = derAt(bytes, p); // OCTET STRING с RSAPrivateKey
+          const rsaSeq = derAt(bytes, octet.pos);
+          let q = rsaSeq.pos;
+          const innerVersion = derAt(bytes, q); // INTEGER 0
+          q = innerVersion.next;
+          const nInt = derAt(bytes, q); // modulus
+          q = nInt.next;
+          const eInt = derAt(bytes, q); // publicExponent (пропускаем)
+          q = eInt.next;
+          const dInt = derAt(bytes, q); // privateExponent
+          const n = bigFromBe(bytes.subarray(nInt.pos, nInt.next));
+          const d = bigFromBe(bytes.subarray(dInt.pos, dInt.next));
+          return { n, d };
+        }
+
+        function loadKeyPkcs8() {
+          try {
+            const b64 = localStorage.getItem(KEY_STORE);
+            if (!b64) {
+              return null;
+            }
+            return b64ToBytes(b64);
+          } catch (e) {
+            log("ключ из localStorage не прочитан: " + e.message, "note");
+            return null;
+          }
+        }
+
+        async function ensureKey() {
+          if (state.key) {
+            return;
+          }
+          let pkcs8 = loadKeyPkcs8();
+          if (!pkcs8) {
+            log("генерирую RSA-ключ 2048 (первый запуск)…", "note");
+            const pair = await crypto.subtle.generateKey(
+              {
+                name: "RSASSA-PKCS1-v1_5",
+                hash: "SHA-1",
+                modulusLength: 2048,
+                publicExponent: new Uint8Array([1, 0, 1]),
+              },
+              true,
+              ["sign", "verify"],
+            );
+            pkcs8 = new Uint8Array(
+              await crypto.subtle.exportKey("pkcs8", pair.privateKey),
+            );
+            try {
+              localStorage.setItem(KEY_STORE, b64Enc(pkcs8));
+              log("ключ сохранён в localStorage", "ok");
+            } catch (e) {
+              log("ключ не сохранён (localStorage недоступен): " + e.message, "note");
+            }
+          }
+          state.key = pkcs8Extract(pkcs8);
+          $("keyLabel").textContent = "ключ: есть (RSA-2048)";
+        }
+
+        // adb public key: 4+4+256+256+4=524 байта, little-endian:
+        // [lenInWords=64][n0inv][n][rr=2^4096 mod n][e=65537]
+        function buildPubBlob(n) {
+          const out = new Uint8Array(524);
+          const dv = new DataView(out.buffer);
+          dv.setUint32(0, 64, true);
+          const inv = modInverse32(n);
+          const M = (1n << 32n);
+          dv.setUint32(4, Number((M - inv) % M), true);
+          out.set(leToBytes(n, 256), 8);
+          const rr = (1n << 4096n) % n;
+          out.set(leToBytes(rr, 256), 264);
+          dv.setUint32(520, 65537, true);
+          return out;
+        }
+
+        function signToken(token) {
+          const padded = new Uint8Array(256);
+          padded[0] = 0;
+          padded[1] = 1;
+          let idx = 2;
+          const fillLen = 256 - DIGEST_INFO.length - token.length - 1;
+          while (idx < fillLen) {
+            padded[idx] = 0xff;
+            idx += 1;
+          }
+          padded[idx] = 0;
+          idx += 1;
+          padded.set(DIGEST_INFO, idx);
+          idx += DIGEST_INFO.length;
+          padded.set(token, idx);
+          const m = bigFromBe(padded);
+          return beToBytes(powMod(m, state.key.d, state.key.n), 256);
+        }
+
+        // --- USB / WebUSB ---
+        function assertUsb() {
+          const el = $("btnConnect");
+          if (!("usb" in navigator)) {
+            el.disabled = true;
+            log(
+              "нет WebUSB: нужен Chrome/Edge/Opera; Firefox и Safari не поддерживают его. Открой страницу в Chromium.",
+              "err",
+            );
+            return false;
+          }
+          return true;
+        }
+
+        function findAdbInterface(device) {
+          const cfg = device.configuration;
+          if (!cfg) {
+            throw new Error("нет активной USB-конфигурации");
+          }
+          for (const iface of cfg.interfaces) {
+            for (const alt of iface.alternates) {
+              if (
+                alt.interfaceClass !== 0xff ||
+                alt.interfaceSubclass !== 0x42 ||
+                alt.interfaceProtocol !== 0x01
+              ) {
+                continue;
+              }
+              let epIn = null;
+              let epOut = null;
+              for (const ep of alt.endpoints) {
+                if (ep.type !== "bulk") {
+                  continue;
+                }
+                if (ep.direction === "in" && !epIn) {
+                  epIn = ep;
+                }
+                if (ep.direction === "out" && !epOut) {
+                  epOut = ep;
+                }
+              }
+              if (epIn && epOut) {
+                return { iface, alt, epIn, epOut };
+              }
+            }
+          }
+          throw new Error(
+            "ADB-интерфейс (0xFF/0x42/0x01) в выбранном устройстве не найден",
+          );
+        }
+
+        // --- пакеты ADB ---
+        function checksum(payload) {
+          let sum = 0;
+          for (const byte of payload) {
+            sum = (sum + byte) >>> 0;
+          }
+          return sum;
+        }
+
+        function appendBuf(current, bytes) {
+          const out = new Uint8Array(current.length + bytes.length);
+          out.set(current);
+          out.set(bytes, current.length);
+          return out;
+        }
+
+        async function readAtLeast(n) {
+          while (state.rxBuf.length < n) {
+            const need = n - state.rxBuf.length;
+            const res = await state.device.transferIn(state.epIn, need);
+            if (res.status !== "ok") {
+              throw new Error("transferIn вернул " + res.status);
+            }
+            if (res.data.byteLength > 0) {
+              const data = new Uint8Array(
+                res.data.buffer,
+                res.data.byteOffset,
+                res.data.byteLength,
+              );
+              state.rxBuf = appendBuf(state.rxBuf, data);
+            }
+          }
+        }
+
+        async function readPacket() {
+          for (;;) {
+            await readAtLeast(24);
+            const dv = new DataView(
+              state.rxBuf.buffer,
+              state.rxBuf.byteOffset,
+              24,
+            );
+            const cmd = dv.getUint32(0, true);
+            const arg0 = dv.getUint32(4, true);
+            const arg1 = dv.getUint32(8, true);
+            const len = dv.getUint32(12, true);
+            const magic = dv.getUint32(20, true);
+            if (magic !== ((cmd ^ 0xffffffff) >>> 0)) {
+              log("· мусор вместо заголовка ADB, отбрасываю 24 байта", "err");
+              state.rxBuf = state.rxBuf.subarray(24);
+              continue;
+            }
+            await readAtLeast(24 + len);
+            const view = state.rxBuf;
+            const payload = view.subarray(24, 24 + len);
+            state.rxBuf = view.subarray(24 + len);
+            return { cmd, arg0, arg1, len, payload };
+          }
+        }
+
+        async function txPacket(cmd, arg0, arg1, payload) {
+          if (payload.length > state.maxData) {
+            throw new Error(
+              "payload " + payload.length + " > maxData " + state.maxData,
+            );
+          }
+          const buf = new Uint8Array(24 + payload.length);
+          const dv = new DataView(buf.buffer);
+          dv.setUint32(0, cmd, true);
+          dv.setUint32(4, arg0, true);
+          dv.setUint32(8, arg1, true);
+          dv.setUint32(12, payload.length, true);
+          dv.setUint32(16, checksum(payload), true);
+          dv.setUint32(20, cmd ^ 0xffffffff, true);
+          buf.set(payload, 24);
+          await state.device.transferOut(state.epOut, buf);
+          // пакет размером ровно кратным wMaxPacketSize надо завершить ZLP
+          if ((buf.length % state.epPacketSize) === 0) {
+            await state.device.transferOut(state.epOut, new Uint8Array(0));
+          }
+        }
+
+        function cmdName(cmd) {
+          return "'" + (CMD_NAMES[cmd] || "0x" + cmd.toString(16)) + "'";
+        }
+
+        // --- обработчики пакетов ---
+        function handleCnxn(pkt) {
+          state.version = Math.min(pkt.arg0, ADB_VERSION);
+          state.maxData = Math.min(pkt.arg1, HOST_MAX);
+          const banner = bannerDec.decode(pkt.payload).replace(/\0/g, "");
+          log(
+            "· CNXN версия=0x" + state.version.toString(16) +
+              " maxPayload=" + state.maxData,
+            "rx",
+          );
+          log("  устройство отчиталось: " + (banner || "(пустой banner)"), "rx");
+          if (state.connected) {
+            log("· повторный CNXN — уже подключены", "note");
+            return;
+          }
+          state.connected = true;
+          setStatus("on");
+          $("cmd").disabled = false;
+          $("btnRun").disabled = false;
+          log("готов к shell-командам", "ok");
+        }
+
+        async function signAndSend(token) {
+          const sig = signToken(token);
+          await txPacket(CMD.Auth, AUTH_SIGNATURE, 0, sig);
+          log("❯ AUTH SIGNATURE 256 байт", "tx");
+        }
+
+        async function sendPublicKey() {
+          const blob = buildPubBlob(state.key.n);
+          const payload = enc.encode(b64Enc(blob) + "\0");
+          await txPacket(CMD.Auth, AUTH_PUBLICKEY, 0, payload);
+          log("❯ AUTH PUBLICKEY " + payload.length + " байт", "tx");
+          log(
+            "ключ отправлен: подтверди USB debugging на экране ГУ (список допустимых)",
+            "note",
+          );
+        }
+
+        async function handlePacket(pkt) {
+          if (pkt.cmd === CMD.Cnxn) {
+            handleCnxn(pkt);
+            return;
+          }
+          if (pkt.cmd === CMD.Auth) {
+            if (pkt.arg0 === AUTH_TOKEN) {
+              state.tokenCount += 1;
+              log(
+                "· AUTH TOKEN " + pkt.len + ": " +
+                  hexOf(pkt.payload, 8) + "…",
+                "rx",
+              );
+              if (state.tokenCount === 1) {
+                await signAndSend(pkt.payload);
+                log(
+                  "первый токен подписан — если ключ ГУ не знает, придёт ещё токен",
+                  "note",
+                );
+              } else {
+                await sendPublicKey();
+              }
+              return;
+            }
+            log("· AUTH тип=" + pkt.arg0 + " (не токен)", "rx");
+            return;
+          }
+          if (pkt.cmd === CMD.Okay) {
+            if (pkt.arg1 === state.localId && state.remoteId === 0) {
+              state.remoteId = pkt.arg0;
+              log(
+                "· OKAY remote=" + pkt.arg0 + " local=" + pkt.arg1 +
+                  " — сокет открыт",
+                "rx",
+              );
+              return;
+            }
+            log("· OKAY " + pkt.arg0 + "/" + pkt.arg1 + " (не наш поток)", "rx");
+            return;
+          }
+          if (pkt.cmd === CMD.Wrte) {
+            await handleWrte(pkt);
+            return;
+          }
+          if (pkt.cmd === CMD.Clse) {
+            await handleClse(pkt);
+            return;
+          }
+          log(
+            "· " + cmdName(pkt.cmd) + " arg0=" + pkt.arg0 +
+              " arg1=" + pkt.arg1 + " len=" + pkt.len,
+            "rx",
+          );
+        }
+
+        async function handleWrte(pkt) {
+          if (pkt.arg0 !== state.remoteId || !state.busy) {
+            log(
+              "· WRTE " + pkt.len + " от потока " + pkt.arg0 +
+                " (не наш) — шлю CLSE",
+              "err",
+            );
+            try {
+              await txPacket(
+                CMD.Clse,
+                state.localId || pkt.arg1,
+                pkt.arg0,
+                new Uint8Array(0),
+              );
+            } catch (_e) {
+              // соединение может уже умереть — не критично
+            }
+            return;
+          }
+          await txPacket(
+            CMD.Okay,
+            state.localId,
+            state.remoteId,
+            new Uint8Array(0),
+          );
+          log("· WRTE " + pkt.len + " байт → OKAY", "rx");
+          if (pkt.len > 0 && state.decOut) {
+            appendOut(state.decOut.decode(pkt.payload, { stream: true }));
+          }
+        }
+
+        function finishShell() {
+          if (state.decOut) {
+            const tail = state.decOut.decode();
+            if (tail) {
+              appendOut(tail);
+            }
+            state.decOut = null;
+          }
+          state.busy = false;
+          state.remoteId = 0;
+        }
+
+        async function handleClse(pkt) {
+          if (pkt.arg0 === 0 && pkt.arg1 === state.localId) {
+            log("· CLSE 0 — ГУ не открыл сокет (что-то с командой)", "err");
+            appendOut("(команда не запустилась)\n");
+            finishShell();
+            return;
+          }
+          if (pkt.arg1 === state.localId && state.busy) {
+            log("· CLSE — ГУ закрыл поток", "rx");
+            try {
+              await txPacket(
+                CMD.Clse,
+                state.localId,
+                state.remoteId,
+                new Uint8Array(0),
+              );
+            } catch (_e) {
+              // ignore
+            }
+            finishShell();
+            return;
+          }
+          log(
+            "· CLSE " + pkt.arg0 + "/" + pkt.arg1 + " (не наш поток)",
+            "rx",
+          );
+        }
+
+        // --- главный цикл чтения ---
+        async function pump() {
+          try {
+            for (;;) {
+              const pkt = await readPacket();
+              await handlePacket(pkt);
+            }
+          } catch (e) {
+            if (state.closing) {
+              return;
+            }
+            log("соединение умерло: " + (e && e.message ? e.message : e), "err");
+            resetConnection();
+          }
+        }
+
+        // --- вывод команды ---
+        function setOut(text) {
+          state.outText = text;
+          const box = $("out");
+          box.textContent = text;
+          box.scrollTop = box.scrollHeight;
+        }
+
+        function appendOut(text) {
+          state.outText += text;
+          const box = $("out");
+          box.textContent = state.outText;
+          box.scrollTop = box.scrollHeight;
+        }
+
+        // --- shell ---
+        async function runShell(cmd) {
+          const command = cmd.trim();
+          if (!command) {
+            return;
+          }
+          if (!state.connected) {
+            log("нет соединения — сначала подключись", "err");
+            return;
+          }
+          if (state.busy) {
+            log("идёт другая команда — дождись CLSE", "note");
+            return;
+          }
+          state.busy = true;
+          state.localId = state.nextId;
+          state.nextId += 1;
+          state.remoteId = 0;
+          state.decOut = new TextDecoder();
+          setOut("❯ " + command + "\n");
+          // Android < 9 требует NUL в конце service-строки, новые — нет
+          let service = "shell:" + command;
+          if (state.version < ADB_VERSION) {
+            service += "\0";
+          }
+          log("❯ OPEN " + state.localId + " shell:" + command, "tx");
+          try {
+            await txPacket(CMD.Open, state.localId, 0, enc.encode(service));
+          } catch (e) {
+            log("OPEN не отправлен: " + e.message, "err");
+            finishShell();
+          }
+        }
+
+        // --- соединение ---
+        async function resetConnection() {
+          state.closing = true;
+          if (state.device && state.device.opened) {
+            try {
+              await state.device.close();
+            } catch (_e) {
+              // устройство могло исчезнуть
+            }
+          }
+          state.closing = false;
+          state.device = null;
+          state.rxBuf = new Uint8Array(0);
+          state.connected = false;
+          state.busy = false;
+          state.remoteId = 0;
+          state.localId = 0;
+          state.tokenCount = 0;
+          $("cmd").disabled = true;
+          $("btnRun").disabled = true;
+          setStatus("off");
+        }
+
+        async function openConnection(device) {
+          if (state.device) {
+            await resetConnection();
+          }
+          state.device = device;
+          try {
+            if (!device.opened) {
+              await device.open();
+            }
+            if (!device.configuration) {
+              await device.selectConfiguration(1);
+            }
+            const info = findAdbInterface(device);
+            log(
+              "· USB " + (device.productName || "(без имени)") +
+                " — ADB-интерфейс найден",
+              "ok",
+            );
+            await device.claimInterface(info.iface.interfaceNumber);
+            if (info.alt.alternateSetting !== 0) {
+              await device.selectAlternateInterface(
+                info.iface.interfaceNumber,
+                info.alt.alternateSetting,
+              );
+            }
+            state.epIn = info.epIn.endpointNumber;
+            state.epOut = info.epOut.endpointNumber;
+            state.epPacketSize = info.epIn.packetSize || 512;
+            log(
+              "  EP in=" + state.epIn + " out=" + state.epOut +
+                " packetSize=" + state.epPacketSize,
+              "rx",
+            );
+            await ensureKey();
+            setStatus("auth");
+            // жмём первым CNXN (так делает и Tango), advert banner
+            await txPacket(
+              CMD.Cnxn,
+              ADB_VERSION,
+              HOST_MAX,
+              enc.encode("host::"),
+            );
+            log(
+              "❯ CNXN v=0x" + ADB_VERSION.toString(16) +
+                " max=" + HOST_MAX + " host::",
+              "tx",
+            );
+            pump();
+          } catch (e) {
+            log("подключение не удалось: " + (e && e.message ? e.message : e), "err");
+            if (e && e.name === "NetworkError") {
+              log(
+                "частая причина: USB-интерфейс занят — закрой bz3x-tool и выполни `adb kill-server`",
+                "note",
+              );
+            }
+            resetConnection();
+          }
+        }
+
+        // --- ключ: статус/забыть ---
+        function refreshKeyLabel() {
+          const pkcs8 = loadKeyPkcs8();
+          if (!pkcs8) {
+            $("keyLabel").textContent = "ключ: нет (сгенерируется при подключении)";
+            return;
+          }
+          try {
+            pkcs8Extract(pkcs8);
+            $("keyLabel").textContent = "ключ: сохранён в браузере";
+          } catch (_e) {
+            $("keyLabel").textContent = "ключ: битый, сгенерируется заново";
+          }
+        }
+
+        // --- интерфейс ---
+        function buildPresets() {
+          const box = $("presets");
+          const presets = [
+            ["getprop ro.product.model", "модель"],
+            ["getprop ro.build.version.release", "Android"],
+            ["getprop persist.sys.locale", "локаль"],
+            ["settings get global auto_time", "авто-время"],
+            ["pm list packages -3", "сторонние пакеты"],
+            ["ls /data/local/tmp", "tmp на ГУ"],
+          ];
+          for (const [command, label] of presets) {
+            const btn = document.createElement("button");
+            btn.className = "btn sm";
+            btn.textContent = label;
+            btn.title = command;
+            btn.addEventListener("click", () => {
+              if (command === "__clear") {
+                setOut("");
+                return;
+              }
+              runShell(command);
+            });
+            box.appendChild(btn);
+          }
+          const clear = document.createElement("button");
+          clear.className = "btn sm";
+          clear.textContent = "очистить вывод";
+          clear.addEventListener("click", () => {
+            setOut("");
+          });
+          box.appendChild(clear);
+        }
+
+        function init() {
+          if (!assertUsb()) {
+            return;
+          }
+          navigator.usb.addEventListener("disconnect", (e) => {
+            if (state.device && e.device === state.device) {
+              log("USB-устройство отсоединилось", "err");
+              resetConnection();
+            }
+          });
+          refreshKeyLabel();
+          buildPresets();
+          $("btnConnect").addEventListener("click", async () => {
+            try {
+              const device = await navigator.usb.requestDevice({
+                filters: [
+                  { classCode: 0xff, subclassCode: 0x42, protocolCode: 0x01 },
+                ],
+              });
+              await openConnection(device);
+            } catch (e) {
+              if (e && e.name === "NotFoundError") {
+                log("в окне выбора ничего не выбрано", "note");
+                return;
+              }
+              log("requestDevice: " + (e && e.message ? e.message : e), "err");
+            }
+          });
+          $("btnDevices").addEventListener("click", async () => {
+            try {
+              const granted = await navigator.usb.getDevices();
+              const found = [];
+              for (const dev of granted) {
+                try {
+                  findAdbInterface(dev);
+                  found.push(dev);
+                } catch (_e) {
+                  // не ADB — мимо
+                }
+              }
+              log("· ранее разрешённых ADB-устройств: " + found.length, "rx");
+              if (found.length === 1) {
+                await openConnection(found[0]);
+              } else if (found.length > 1) {
+                log(
+                  "несколько — выбери через «Подключить USB-устройство»",
+                  "note",
+                );
+              }
+            } catch (e) {
+              log("getDevices: " + (e && e.message ? e.message : e), "err");
+            }
+          });
+          $("btnForget").addEventListener("click", () => {
+            try {
+              localStorage.removeItem(KEY_STORE);
+            } catch (_e) {
+              // ignore
+            }
+            state.key = null;
+            refreshKeyLabel();
+            log("ключ подписи удалён из localStorage — на ГУ нужно согласить заново", "note");
+          });
+          $("btnRun").addEventListener("click", () => {
+            runShell($("cmd").value);
+          });
+          $("cmd").addEventListener("keydown", (e) => {
+            if (e.key !== "Enter") {
+              return;
+            }
+            runShell($("cmd").value);
+          });
+          log(
+            "прототип: WebUSB → ADB (CNXN/AUTH/OPEN/OKAY/WRTE/CLSE), RSA-2048 как в adb (RSA_sign(NID_sha1) вручную)",
+            "note",
+          );
+        }
+
+        init();
+      })();
+    </script>
+  </body>
+</html>
