@@ -494,6 +494,7 @@
           <button class="tab" data-view="dev">Устройство</button>
           <button class="tab" data-view="screen">Экран</button>
           <button class="tab" data-view="files">Файлы</button>
+          <button class="tab" data-view="apk">APK</button>
           <button class="tab" data-view="help">Справка</button>
         </div>
         <div class="toolbtns">
@@ -623,6 +624,39 @@
               style="color: var(--dim); font: inherit; font-size: 13px; margin-bottom: 8px"
             /><br />
             <button class="chip" id="pushBtn">загрузить на устройство</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- apk -->
+      <div id="view-apk" class="view hidden">
+        <div class="proc">
+          <div class="prochead">
+            Установка APK: <code>sync push</code> → <code>pm install</code>. Выбери файл — ниже
+            появятся разрешения из манифеста; отмеченные выдаются через <code>pm grant</code> после
+            установки (срабатывает только для runtime-разрешений).
+          </div>
+          <div class="procbar">
+            <input
+              type="file"
+              id="apkFile"
+              accept=".apk,application/vnd.android.package-archive"
+              style="color: var(--dim); font: inherit; font-size: 13px"
+            />
+          </div>
+          <div class="proclist" id="apkBody" style="padding: 12px 14px">
+            <div class="kv" id="apkHint">файл не выбран</div>
+          </div>
+          <div class="procbar" style="border-top: 1px solid var(--line); border-bottom: 0">
+            <label class="kv" style="display: inline-flex; align-items: center; gap: 6px">
+              <input type="checkbox" id="apkReinstall" checked style="accent-color: var(--accent)" />
+              переустановить (-r)
+            </label>
+            <label class="kv" style="display: inline-flex; align-items: center; gap: 6px">
+              <input type="checkbox" id="apkDowngrade" checked style="accent-color: var(--accent)" />
+              downgrade (-d)
+            </label>
+            <button class="chip" id="apkInstall">установить</button>
           </div>
         </div>
       </div>
@@ -1417,6 +1451,274 @@
         btn.disabled = false;
       }
 
+      /* ---- APK install (parse manifest + pm install/grant) ---- */
+      var RUNTIME = [
+        "CAMERA", "RECORD_AUDIO", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION", "READ_CONTACTS", "WRITE_CONTACTS", "GET_ACCOUNTS",
+        "READ_CALENDAR", "WRITE_CALENDAR", "READ_PHONE_STATE", "READ_PHONE_NUMBERS",
+        "CALL_PHONE", "READ_CALL_LOG", "WRITE_CALL_LOG", "ADD_VOICEMAIL", "USE_SIP",
+        "SEND_SMS", "RECEIVE_SMS", "READ_SMS", "RECEIVE_WAP_PUSH", "RECEIVE_MMS",
+        "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE", "BODY_SENSORS",
+        "ACTIVITY_RECOGNITION", "POST_NOTIFICATIONS", "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT", "BLUETOOTH_ADVERTISE", "NEARBY_WIFI_DEVICES",
+        "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "READ_MEDIA_AUDIO",
+      ];
+      var APK = { bytes: null, pkg: null, perms: [] };
+
+      async function inflateRaw(bytes) {
+        var ds = new DecompressionStream("deflate-raw");
+        var w = ds.writable.getWriter();
+        w.write(bytes);
+        w.close();
+        var r = ds.readable.getReader(),
+          chunks = [],
+          total = 0;
+        while (true) {
+          var s = await r.read();
+          if (s.done) break;
+          chunks.push(s.value);
+          total += s.value.length;
+        }
+        var out = new Uint8Array(total),
+          o = 0;
+        chunks.forEach(function (c) {
+          out.set(c, o);
+          o += c.length;
+        });
+        return out;
+      }
+      async function extractManifest(bytes) {
+        var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        var eocd = -1;
+        for (var i = bytes.length - 22; i >= 0; i--) {
+          if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+        }
+        if (eocd < 0) throw new Error("не APK (нет EOCD)");
+        var cdOff = dv.getUint32(eocd + 16, true);
+        var count = dv.getUint16(eocd + 10, true);
+        var p = cdOff,
+          target = null;
+        for (var e = 0; e < count; e++) {
+          if (dv.getUint32(p, true) !== 0x02014b50) break;
+          var method = dv.getUint16(p + 10, true);
+          var compSize = dv.getUint32(p + 20, true);
+          var nameLen = dv.getUint16(p + 28, true);
+          var extraLen = dv.getUint16(p + 30, true);
+          var commentLen = dv.getUint16(p + 32, true);
+          var localOff = dv.getUint32(p + 42, true);
+          var name = dec.decode(bytes.subarray(p + 46, p + 46 + nameLen));
+          if (name === "AndroidManifest.xml") { target = { method: method, compSize: compSize, localOff: localOff }; break; }
+          p += 46 + nameLen + extraLen + commentLen;
+        }
+        if (!target) throw new Error("нет AndroidManifest.xml");
+        var lnl = dv.getUint16(target.localOff + 26, true);
+        var lel = dv.getUint16(target.localOff + 28, true);
+        var dstart = target.localOff + 30 + lnl + lel;
+        var comp = bytes.subarray(dstart, dstart + target.compSize);
+        if (target.method === 0) return comp.slice();
+        if (target.method === 8) {
+          if (typeof DecompressionStream === "undefined") throw new Error("нет DecompressionStream");
+          return await inflateRaw(comp);
+        }
+        throw new Error("метод сжатия " + target.method);
+      }
+      function readU16Str(dv, p) {
+        var len = dv.getUint16(p, true);
+        p += 2;
+        if (len & 0x8000) { len = ((len & 0x7fff) << 16) | dv.getUint16(p, true); p += 2; }
+        var s = "";
+        for (var i = 0; i < len; i++) { s += String.fromCharCode(dv.getUint16(p, true)); p += 2; }
+        return s;
+      }
+      function readU8Str(buf, p) {
+        var c = buf[p];
+        p += c & 0x80 ? 2 : 1;
+        var bl = buf[p];
+        if (bl & 0x80) { bl = ((bl & 0x7f) << 8) | buf[p + 1]; p += 2; } else p += 1;
+        return dec.decode(buf.subarray(p, p + bl));
+      }
+      function parseAxml(buf) {
+        var dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        if (dv.getUint16(0, true) !== 0x0003) throw new Error("не бинарный XML");
+        var off = 8;
+        if (dv.getUint16(off, true) !== 0x0001) throw new Error("нет string pool");
+        var poolSize = dv.getUint32(off + 4, true);
+        var strCount = dv.getUint32(off + 8, true);
+        var flags = dv.getUint32(off + 16, true);
+        var strStart = dv.getUint32(off + 20, true);
+        var utf8 = (flags & 0x100) !== 0;
+        var strings = new Array(strCount);
+        for (var i = 0; i < strCount; i++) {
+          var so = dv.getUint32(off + 28 + i * 4, true);
+          var sp = off + strStart + so;
+          strings[i] = utf8 ? readU8Str(buf, sp) : readU16Str(dv, sp);
+        }
+        var pos = off + poolSize,
+          pkg = null,
+          perms = [];
+        while (pos + 8 <= buf.length) {
+          var ct = dv.getUint16(pos, true);
+          var cs = dv.getUint32(pos + 4, true);
+          if (cs < 8) break;
+          if (ct === 0x0102) {
+            var elName = strings[dv.getUint32(pos + 20, true)] || "";
+            var attrStart = dv.getUint16(pos + 24, true);
+            var attrSize = dv.getUint16(pos + 26, true);
+            var attrCount = dv.getUint16(pos + 28, true);
+            var ao = pos + 16 + attrStart;
+            for (var a = 0; a < attrCount; a++) {
+              var b = ao + a * attrSize;
+              var an = strings[dv.getUint32(b + 4, true)] || "";
+              var raw = dv.getUint32(b + 8, true);
+              var val;
+              if (raw !== 0xffffffff) val = strings[raw];
+              else {
+                var dt = buf[b + 15];
+                var data = dv.getUint32(b + 16, true);
+                val = dt === 3 ? strings[data] : String(data >>> 0);
+              }
+              if (elName === "manifest" && an === "package") pkg = val;
+              if ((elName === "uses-permission" || elName === "uses-permission-sdk-23") && an === "name" && val) perms.push(val);
+            }
+          }
+          pos += cs;
+        }
+        perms = perms.filter(function (v, i) { return perms.indexOf(v) === i; });
+        return { pkg: pkg, perms: perms };
+      }
+
+      async function onApkFile() {
+        var f = $("#apkFile").files[0];
+        var body = $("#apkBody");
+        if (!f) {
+          body.innerHTML = '<div class="kv">файл не выбран</div>';
+          APK = { bytes: null, pkg: null, perms: [] };
+          return;
+        }
+        body.innerHTML = '<div class="kv">чтение манифеста…</div>';
+        var bytes = new Uint8Array(await f.arrayBuffer());
+        APK = { bytes: bytes, pkg: null, perms: [] };
+        try {
+          var man = parseAxml(await extractManifest(bytes));
+          APK.pkg = man.pkg;
+          APK.perms = man.perms;
+          renderApk(f, man);
+        } catch (e) {
+          body.innerHTML = "";
+          var d = document.createElement("div");
+          d.className = "kv";
+          d.textContent = "манифест не разобран (" + e.message + "). Установить можно; выбор разрешений недоступен.";
+          body.appendChild(d);
+        }
+      }
+      function renderApk(f, man) {
+        var body = $("#apkBody");
+        body.innerHTML = "";
+        var info = document.createElement("div");
+        info.className = "inforow";
+        info.style.padding = "0 0 8px";
+        info.innerHTML = '<span class="k">пакет</span><span class="v"></span>';
+        info.querySelector(".v").textContent = (man.pkg || "?") + " · " + Math.round(f.size / 1024) + " КБ";
+        body.appendChild(info);
+        if (!man.perms.length) {
+          var n = document.createElement("div");
+          n.className = "kv";
+          n.textContent = "в манифесте нет запрошенных разрешений";
+          body.appendChild(n);
+          return;
+        }
+        var bar = document.createElement("div");
+        bar.style.margin = "6px 0 8px";
+        bar.innerHTML =
+          '<button class="chip" id="apkAll" style="min-height:30px">все</button> ' +
+          '<button class="chip" id="apkNone" style="min-height:30px">снять</button>';
+        body.appendChild(bar);
+        man.perms.forEach(function (perm) {
+          var short = perm.replace(/^android\.permission\./, "");
+          var runtime = RUNTIME.indexOf(short) >= 0;
+          var row = document.createElement("label");
+          row.style.cssText =
+            "display:flex;gap:10px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--line);cursor:pointer";
+          var cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = runtime;
+          cb.dataset.perm = perm;
+          cb.className = "apkperm";
+          cb.style.accentColor = "var(--accent)";
+          var name = document.createElement("span");
+          name.style.cssText = "color:var(--fg);font-size:13px;flex:1;word-break:break-all";
+          name.textContent = short;
+          var tag = document.createElement("span");
+          tag.className = "kv";
+          tag.style.fontSize = "11px";
+          tag.textContent = runtime ? "runtime" : "—";
+          row.appendChild(cb);
+          row.appendChild(name);
+          row.appendChild(tag);
+          body.appendChild(row);
+        });
+        $("#apkAll").onclick = function () {
+          document.querySelectorAll(".apkperm").forEach(function (c) { c.checked = true; });
+        };
+        $("#apkNone").onclick = function () {
+          document.querySelectorAll(".apkperm").forEach(function (c) { c.checked = false; });
+        };
+      }
+      async function installApk() {
+        if (!ADB.connected) { toast("нет подключения"); return; }
+        if (!APK.bytes) { toast("выбери APK"); return; }
+        var btn = $("#apkInstall"),
+          old = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "ставлю…";
+        var tmp = "/data/local/tmp/gl-" + Date.now() + ".apk";
+        try {
+          switchView("term");
+          logLine("*", "push APK → " + tmp + " · " + APK.bytes.length + " Б", "note");
+          await pushFile(tmp, APK.bytes);
+          var flags = [];
+          if ($("#apkReinstall").checked) flags.push("-r");
+          if ($("#apkDowngrade").checked) flags.push("-d");
+          logLine("❯", "pm install " + flags.join(" ") + " " + tmp, "tx");
+          var out = (await shellExec("pm install " + flags.join(" ") + " " + tmp)).trim();
+          if (out) logBlock(out, "rx");
+          if (/Success/i.test(out)) {
+            logLine("<", "установлено" + (APK.pkg ? " · " + APK.pkg : ""), "ok");
+            var sel = [];
+            document.querySelectorAll(".apkperm").forEach(function (c) {
+              if (c.checked) sel.push(c.dataset.perm);
+            });
+            if (APK.pkg && sel.length) {
+              var granted = 0,
+                failed = 0;
+              for (var i = 0; i < sel.length; i++) {
+                var r = (await shellExec("pm grant " + APK.pkg + " " + sel[i])).trim();
+                if (!r) granted++;
+                else {
+                  failed++;
+                  logLine("!", "grant " + sel[i].replace(/^android\.permission\./, "") + ": " + r, "err");
+                }
+              }
+              logLine("<", "разрешений выдано " + granted + (failed ? ", не удалось " + failed : ""), "ok");
+            } else if (!APK.pkg && sel.length) {
+              logLine("!", "имя пакета неизвестно — разрешения не выданы", "err");
+            }
+            toast("APK установлен");
+          } else {
+            logLine("!", "pm install не вернул Success", "err");
+            toast("установка не удалась");
+          }
+        } catch (e) {
+          logLine("!", "install: " + e.message, "err");
+          toast(e.message);
+        }
+        try {
+          await shellExec("rm -f " + tmp);
+        } catch (e) {}
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+
       /* ================= UI wiring ================= */
       function setState(kind, txt) {
         var p = $("#statePill");
@@ -1676,7 +1978,7 @@
         document.querySelectorAll(".tab").forEach(function (t) {
           t.classList.toggle("on", t.dataset.view === v);
         });
-        ["term", "dev", "screen", "files", "help"].forEach(function (name) {
+        ["term", "dev", "screen", "files", "apk", "help"].forEach(function (name) {
           $("#view-" + name).classList.toggle("hidden", name !== v);
         });
       }
@@ -1705,6 +2007,8 @@
         $("#shotBtn").onclick = takeScreenshot;
         $("#pullBtn").onclick = doPull;
         $("#pushBtn").onclick = doPush;
+        $("#apkFile").onchange = onApkFile;
+        $("#apkInstall").onclick = installApk;
         $("#cmd").addEventListener("keydown", function (e) {
           if (e.key === "Enter") {
             var v = this.value;
