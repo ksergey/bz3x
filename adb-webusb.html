@@ -448,6 +448,49 @@
       .foot a:hover {
         text-decoration: underline;
       }
+      .prog {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        z-index: 55;
+        width: min(420px, 86vw);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+      }
+      .prog.hidden {
+        display: none;
+      }
+      .progtop {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--dim);
+        margin-bottom: 7px;
+      }
+      .progtop b {
+        color: var(--fg);
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .progtrack {
+        height: 6px;
+        background: var(--panel2);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .progfill {
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+        transition: width 0.1s linear;
+      }
       #toast {
         position: fixed;
         left: 50%;
@@ -589,19 +632,25 @@
             <h3
               style="color: var(--fg); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 4px 0 8px"
             >
-              скачать с устройства (pull)
+              браузер устройства
             </h3>
-            <div class="inputwrap" style="margin: 0 0 8px">
-              <span class="prompt" style="color: var(--dim)">↓</span>
+            <div class="inputwrap" style="margin: 0 0 6px">
               <input
-                id="pullPath"
-                placeholder="/sdcard/Download/file.bin"
+                id="fsPathInput"
+                value="/sdcard"
                 autocomplete="off"
                 spellcheck="false"
                 style="flex: 1; background: transparent; border: 0; outline: 0; color: var(--fg); font: inherit; font-size: 16px"
               />
+              <button class="chip" id="fsGo" style="min-height: 30px">открыть</button>
             </div>
-            <button class="chip" id="pullBtn">скачать в браузер</button>
+            <div class="kv" id="fsPath" style="margin: 0 0 6px; word-break: break-all">/sdcard</div>
+            <div
+              id="fsList"
+              style="border: 1px solid var(--line); border-radius: 9px; overflow: hidden; margin-bottom: 4px"
+            >
+              <div class="inforow"><span class="k">—</span><span class="v">нажми «открыть»</span></div>
+            </div>
 
             <h3
               style="color: var(--fg); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 18px 0 8px"
@@ -715,6 +764,11 @@
       </div>
     </div>
 
+    <div id="prog" class="prog hidden">
+      <div class="progtop"><b id="progLbl">—</b><span id="progPct">0%</span></div>
+      <div class="progtrack"><div id="progFill" class="progfill"></div></div>
+    </div>
+
     <div id="toast"></div>
 
     <script>
@@ -735,6 +789,24 @@
         toast._h = setTimeout(function () {
           t.classList.remove("on");
         }, 1600);
+      }
+      function progShow(label) {
+        $("#progLbl").textContent = label;
+        $("#progPct").textContent = "0%";
+        $("#progFill").style.width = "0%";
+        $("#prog").classList.remove("hidden");
+      }
+      function progSet(done, total) {
+        if (total) {
+          var pct = Math.min(100, Math.round((done / total) * 100));
+          $("#progFill").style.width = pct + "%";
+          $("#progPct").textContent = pct + "% · " + fmtSize(done) + " / " + fmtSize(total);
+        } else {
+          $("#progPct").textContent = fmtSize(done);
+        }
+      }
+      function progHide() {
+        $("#prog").classList.add("hidden");
       }
 
       function logLine(glyph, text, cls) {
@@ -1244,7 +1316,7 @@
         }
         return out;
       }
-      async function pullFile(path) {
+      async function pullFile(path, onProgress) {
         var st = await openStream("sync:");
         var p = enc.encode(path);
         var req = new Uint8Array(8 + p.length);
@@ -1260,6 +1332,7 @@
           if (id === "DATA") {
             parts.push(await syncReadExact(st, len));
             total += len;
+            if (onProgress) onProgress(total);
           } else if (id === "DONE") {
             break;
           } else if (id === "FAIL") {
@@ -1281,7 +1354,7 @@
         });
         return out;
       }
-      async function pushFile(path, bytes, mode) {
+      async function pushFile(path, bytes, mode, onProgress) {
         mode = mode || 33188; // 0100644
         var st = await openStream("sync:");
         var meta = enc.encode(path + "," + mode);
@@ -1299,6 +1372,7 @@
           frame.set(chunk, 8);
           await st.write(frame);
           off = end;
+          if (onProgress) onProgress(off, bytes.length);
         }
         await st.write(syncPacket("DONE", Math.floor(Date.now() / 1000)));
         var rh = await syncReadExact(st, 8);
@@ -1312,6 +1386,148 @@
         await st.write(syncPacket("QUIT", 0)).catch(function () {});
         await st.close();
         return true;
+      }
+
+      /* ---- file browser (sync: LIST) ---- */
+      var FS = { cwd: "/sdcard", loaded: false };
+      async function listDir(path) {
+        var st = await openStream("sync:");
+        var p = enc.encode(path);
+        var req = new Uint8Array(8 + p.length);
+        req.set(syncPacket("LIST", p.length), 0);
+        req.set(p, 8);
+        await st.write(req);
+        var entries = [];
+        while (true) {
+          var id = dec.decode(await syncReadExact(st, 4));
+          if (id === "DENT") {
+            var meta = await syncReadExact(st, 16);
+            var mdv = new DataView(meta.buffer, meta.byteOffset);
+            var mode = mdv.getUint32(0, true);
+            var size = mdv.getUint32(4, true);
+            var mtime = mdv.getUint32(8, true);
+            var nl = mdv.getUint32(12, true);
+            var name = dec.decode(await syncReadExact(st, nl));
+            if (name !== "." && name !== "..")
+              entries.push({ name: name, size: size, mtime: mtime, dir: (mode & 0xf000) === 0x4000 });
+          } else if (id === "DONE") {
+            await syncReadExact(st, 16);
+            break;
+          } else if (id === "FAIL") {
+            var lb = await syncReadExact(st, 4);
+            var len = new DataView(lb.buffer, lb.byteOffset).getUint32(0, true);
+            var msg = await syncReadExact(st, len);
+            await st.close();
+            throw new Error(dec.decode(msg) || "FAIL");
+          } else {
+            await st.close();
+            throw new Error("sync LIST: " + id);
+          }
+        }
+        await st.write(syncPacket("QUIT", 0)).catch(function () {});
+        await st.close();
+        entries.sort(function (a, b) {
+          if (a.dir !== b.dir) return a.dir ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+        return entries;
+      }
+      function joinPath(base, name) {
+        if (base === "/") return "/" + name;
+        return base.replace(/\/+$/, "") + "/" + name;
+      }
+      function parentPath(p) {
+        if (p === "/" || p === "") return "/";
+        var q = p.replace(/\/+$/, "");
+        var i = q.lastIndexOf("/");
+        return i <= 0 ? "/" : q.slice(0, i);
+      }
+      function fmtSize(n) {
+        if (n < 1024) return n + " Б";
+        if (n < 1048576) return (n / 1024).toFixed(1) + " КБ";
+        return (n / 1048576).toFixed(1) + " МБ";
+      }
+      function fsRow(en, base) {
+        var row = document.createElement("div");
+        row.className = "inforow";
+        row.style.cursor = "pointer";
+        var nm = document.createElement("span");
+        nm.className = "v";
+        nm.style.cssText = "flex:1;word-break:break-all";
+        nm.textContent = en.up ? ".." : en.name + (en.dir ? "/" : "");
+        if (en.dir) nm.style.color = "var(--accent)";
+        var meta = document.createElement("span");
+        meta.className = "kv";
+        meta.style.cssText = "font-size:11px;margin-left:12px;white-space:nowrap";
+        meta.textContent = en.up || en.dir ? "" : fmtSize(en.size) + "  ↓";
+        row.appendChild(nm);
+        row.appendChild(meta);
+        row.onclick = function () {
+          if (en.up) return browse(parentPath(base));
+          if (en.dir) return browse(joinPath(base, en.name));
+          downloadFromDevice(joinPath(base, en.name), en.size);
+        };
+        return row;
+      }
+      async function browse(path) {
+        if (!ADB.connected) {
+          toast("нет подключения");
+          return;
+        }
+        var list = $("#fsList");
+        list.innerHTML = '<div class="inforow"><span class="k">—</span><span class="v">чтение…</span></div>';
+        try {
+          var entries = await listDir(path);
+          FS.cwd = path;
+          $("#fsPath").textContent = path;
+          $("#fsPathInput").value = path;
+          list.innerHTML = "";
+          if (path !== "/") list.appendChild(fsRow({ up: true, dir: true }, path));
+          if (!entries.length) {
+            var e = document.createElement("div");
+            e.className = "inforow";
+            e.innerHTML = '<span class="k">пусто</span><span class="v"></span>';
+            list.appendChild(e);
+          }
+          entries.forEach(function (en) {
+            list.appendChild(fsRow(en, path));
+          });
+        } catch (e) {
+          list.innerHTML = "";
+          var d = document.createElement("div");
+          d.className = "inforow";
+          d.innerHTML = '<span class="k">ошибка</span><span class="v"></span>';
+          d.querySelector(".v").textContent = e.message;
+          list.appendChild(d);
+        }
+      }
+      async function downloadFromDevice(path, size) {
+        if (!ADB.connected) {
+          toast("нет подключения");
+          return;
+        }
+        var name = path.split("/").pop() || "file";
+        progShow("скачивание " + name);
+        try {
+          var bytes = await pullFile(path, function (done) {
+            progSet(done, size);
+          });
+          var url = URL.createObjectURL(new Blob([bytes]));
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = name;
+          a.click();
+          setTimeout(function () {
+            URL.revokeObjectURL(url);
+          }, 4000);
+          progHide();
+          toast("скачано " + name + " · " + bytes.length + " Б");
+          logLine("<", "pull " + path + " → " + bytes.length + " Б", "ok");
+        } catch (e) {
+          progHide();
+          toast(e.message);
+          logLine("!", "pull: " + e.message, "err");
+        }
       }
 
       /* ---- interactive shell ---- */
@@ -1441,10 +1657,15 @@
         btn.disabled = true;
         try {
           var buf = new Uint8Array(await f.arrayBuffer());
-          await pushFile(target, buf);
+          progShow("загрузка " + f.name);
+          await pushFile(target, buf, 33188, function (done, total) {
+            progSet(done, total);
+          });
+          progHide();
           toast("загружено → " + target);
           logLine("<", "push " + f.name + " → " + target + " · " + buf.length + " Б", "ok");
         } catch (e) {
+          progHide();
           toast(e.message);
           logLine("!", "push: " + e.message, "err");
         }
@@ -1675,7 +1896,11 @@
         try {
           switchView("term");
           logLine("*", "push APK → " + tmp + " · " + APK.bytes.length + " Б", "note");
-          await pushFile(tmp, APK.bytes);
+          progShow("push APK");
+          await pushFile(tmp, APK.bytes, 33188, function (done, total) {
+            progSet(done, total);
+          });
+          progHide();
           var flags = [];
           if ($("#apkReinstall").checked) flags.push("-r");
           if ($("#apkDowngrade").checked) flags.push("-d");
@@ -1709,6 +1934,7 @@
             toast("установка не удалась");
           }
         } catch (e) {
+          progHide();
           logLine("!", "install: " + e.message, "err");
           toast(e.message);
         }
@@ -1728,6 +1954,7 @@
       function setDisconnected() {
         ADB.connected = false;
         ISH.st = null;
+        FS.loaded = false;
         setState("", "не подключено");
         $("#btnConn").classList.remove("conn-on");
         $("#cmd").disabled = true;
@@ -1981,6 +2208,10 @@
         ["term", "dev", "screen", "files", "apk", "help"].forEach(function (name) {
           $("#view-" + name).classList.toggle("hidden", name !== v);
         });
+        if (v === "files" && ADB.connected && !FS.loaded) {
+          FS.loaded = true;
+          browse(FS.cwd);
+        }
       }
 
       /* ================= init ================= */
@@ -2005,7 +2236,12 @@
         };
         $("#devRefresh").onclick = refreshDeviceInfo;
         $("#shotBtn").onclick = takeScreenshot;
-        $("#pullBtn").onclick = doPull;
+        $("#fsGo").onclick = function () {
+          browse($("#fsPathInput").value.trim() || "/");
+        };
+        $("#fsPathInput").addEventListener("keydown", function (e) {
+          if (e.key === "Enter") browse(this.value.trim() || "/");
+        });
         $("#pushBtn").onclick = doPush;
         $("#apkFile").onchange = onApkFile;
         $("#apkInstall").onclick = installApk;
