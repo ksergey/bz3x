@@ -1,34 +1,15 @@
 <!doctype html>
-<html lang="ru" data-theme="dark">
+<html lang="ru">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="color-scheme" content="light" />
     <title>adb · webusb terminal</title>
     <style>
       * {
         box-sizing: border-box;
       }
       :root {
-        --bg: #0b0b0c;
-        --panel: #101012;
-        --panel2: #0e0e10;
-        --line: #242428;
-        --fg: #e4e4e6;
-        --dim: #8a8a92;
-        --faint: #5b5b63;
-        --accent: #7fd4c1;
-        --accent2: #6ca6ff;
-        --tx: #7fd4c1;
-        --rx: #c2c8d0;
-        --note: #d7b36a;
-        --ok: #8fe0a0;
-        --err: #e06c75;
-        --raw: #55555e;
-        --pill-bg: #141417;
-        --pill-line: #2c2c32;
-      }
-      html[data-theme="light"] {
         --bg: #f6f7f9;
         --panel: #ffffff;
         --panel2: #f1f2f5;
@@ -467,10 +448,6 @@
       .foot a:hover {
         text-decoration: underline;
       }
-      html:not([data-theme="light"]) .brand,
-      html:not([data-theme="light"]) .prompt {
-        text-shadow: 0 0 3px rgba(127, 212, 193, 0.25);
-      }
       #toast {
         position: fixed;
         left: 50%;
@@ -478,7 +455,7 @@
         transform: translateX(-50%) translateY(16px);
         z-index: 60;
         background: var(--accent);
-        color: #06211b;
+        color: #fff;
         padding: 8px 15px;
         border-radius: 999px;
         font-size: 12px;
@@ -492,9 +469,6 @@
       #toast.on {
         opacity: 1;
         transform: translateX(-50%) translateY(0);
-      }
-      html[data-theme="light"] #toast {
-        color: #fff;
       }
       ::-webkit-scrollbar {
         width: 10px;
@@ -538,10 +512,10 @@
               <path d="M6 7l1 13h10l1-13" />
             </svg>
           </button>
-          <button id="btnTheme" class="iconbtn" title="тема" aria-label="тема">
+          <button id="btnSave" class="iconbtn" title="скачать лог (.txt)" aria-label="скачать лог">
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 12.8A8 8 0 1 1 11.2 3 6.3 6.3 0 0 0 21 12.8z" />
+              <path d="M12 4v10" /><path d="M8 11l4 4 4-4" /><path d="M5 19h14" />
             </svg>
           </button>
         </div>
@@ -750,6 +724,39 @@
         line.textContent = text;
         el.appendChild(line);
         el.scrollTop = el.scrollHeight;
+      }
+      function downloadLog() {
+        var lines = [];
+        document.querySelectorAll("#log .ln").forEach(function (n) {
+          lines.push(n.textContent);
+        });
+        if (!lines.length) {
+          toast("лог пуст");
+          return;
+        }
+        var d = new Date(),
+          p = function (x) {
+            return String(x).padStart(2, "0");
+          };
+        var name =
+          "adb-log-" +
+          d.getFullYear() +
+          p(d.getMonth() + 1) +
+          p(d.getDate()) +
+          "-" +
+          p(d.getHours()) +
+          p(d.getMinutes()) +
+          p(d.getSeconds()) +
+          ".txt";
+        var url = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/plain" }));
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        a.click();
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 4000);
+        toast("лог сохранён");
       }
 
       /* ================= RSA (BigInt) for ADB auth ================= */
@@ -1689,14 +1696,7 @@
         $("#btnClear").onclick = function () {
           $("#log").innerHTML = "";
         };
-        $("#btnTheme").onclick = function () {
-          var cur = document.documentElement.getAttribute("data-theme");
-          var next = cur === "light" ? "dark" : "light";
-          document.documentElement.setAttribute("data-theme", next);
-          try {
-            localStorage.setItem("adb-webusb-theme", next);
-          } catch (e) {}
-        };
+        $("#btnSave").onclick = downloadLog;
         $("#helpLink").onclick = function (e) {
           e.preventDefault();
           switchView("help");
@@ -1721,11 +1721,6 @@
             $("#cmd").focus();
           }
         });
-        // theme from storage
-        try {
-          var th = localStorage.getItem("adb-webusb-theme");
-          if (th) document.documentElement.setAttribute("data-theme", th);
-        } catch (e) {}
         // reconnect previously granted device automatically
         if ("usb" in navigator) {
           navigator.usb.addEventListener("disconnect", function (ev) {
