@@ -1074,7 +1074,7 @@ html[data-theme="light"] #toast {
         <div class="tabs">
           <button class="tab" id="btnMenu" disabled>Инженерное меню</button>
           <button class="tab" id="btnAdb" disabled>Включить ADB</button>
-          <button class="tab" id="btnDid" disabled>22 10 01</button>
+          <button class="tab" id="btnDid" disabled title="читать DID 0x0110 (UDS 22 10 01)">Язык ГУ</button>
         </div>
         <div class="toolbtns">
           <button id="btnConn" class="iconbtn" title="подключиться (USB/BT-SPP или BLE)" aria-label="подключение">
@@ -1480,6 +1480,10 @@ async function serialReadLoop() {
 
 // locked — сериализация команд (мьютекс) — запросы не смешиваются на одной линии
 var _lock = Promise.resolve();
+// locked — мьютекс для низкоуровневых операций с адаптером (command/_rawCommand,
+// monitor). ВАЖНО: высокоуровневые действия (сессии, рутины, чтение DID) в locked
+// не оборачивать — command/uds сами берут этот мьютекс, внешнее взятие даёт
+// самоблокировку (лог 20261023: кнопка «22 10 01» «делала ничего»).
 function locked(fn) {
   var res = _lock.then(fn);
   _lock = res.then(
@@ -2441,82 +2445,81 @@ function enableAdb() {
 // (doip.py: HMI-дид «язык главного дисплея», 0=китайский, 1=английский).
 // Чтение read-only: сначала в текущей сессии, при NRC/отказе — та же 22 10 01
 // в расширенной сессии (10 03); в finally — 10 01 и closeProto.
-function readDid1001() {
-  return locked(async function () {
-    setBusy(true);
-    var extended = false;
-    try {
-      var c = T.detBus || (await ensureBus());
-      if (!c) {
+// ВАЖНО: не оборачивать в locked() — command/uds сами берут мьютекс,
+// внешнее взятие мьютекса даёт самоблокировку, как в логе 20261023.
+async function readDid1001() {
+  setBusy(true);
+  out("чтение DID 0x0110 (22 10 01)…");
+  var extended = false;
+  try {
+    var c = T.detBus || (await ensureBus());
+    if (!c) {
+      return;
+    }
+    var HMI_LANGS = [
+      "китайский", "английский", "арабский", "русский", "китайский (HK)",
+      "немецкий", "французский", "итальянский", "испанский", "голландский",
+      "норвежский", "шведский", "португальский", "вьетнамский", "тайский",
+      "индонезийский", "малайский", "латина", "бразильский",
+    ];
+    for (var stage = 0; stage < 2; stage++) {
+      try {
+        await initAdapter(c.setup);
+        if (stage === 1) {
+          out(
+            "обычная сессия DID не отдала — пробую в расширенной сессии (10 03)…",
+            "note",
+          );
+          await uds("1003", "5003", { atpc: false, tries: 4 });
+          extended = true;
+          startKeepAlive();
+        }
+        var data = await uds("221001", "", { atpc: false, tries: 2 });
+        out("ответ: " + sp2(data), "ok");
+        if (data.indexOf("62") === 0 && data.length >= 6) {
+          var payload = data.slice(6);
+          var note =
+            "DID 0x0110: " + payload.length / 2 + " байт" +
+            (payload ? ": " + sp2(payload) : " (пусто)");
+          if (payload.length >= 2) {
+            var lang = parseInt(payload.slice(0, 2), 16);
+            note += " — язык HMI: " +
+              (HMI_LANGS[lang] !== undefined ? HMI_LANGS[lang] : "код " + lang);
+          }
+          out(note, "note");
+        }
+        if (extended) {
+          await uds("1001", "5001", { atpc: false, tries: 2 });
+          extended = false;
+        }
+        return;
+      } catch (e) {
+        // extended не сбрасываем: если 10 03 прошла, в finally отправим 10 01
+        out(
+          "DID 0x0110 (" + (stage === 0 ? "обычная" : "расширенная") +
+            " сессия): " + e.message,
+          stage === 0 ? "note" : "err",
+        );
+        if (stage === 0) {
+          continue; // вторая попытка — в расширенной сессии
+        }
         return;
       }
-      var HMI_LANGS = [
-        "китайский", "английский", "арабский", "русский", "китайский (HK)",
-        "немецкий", "французский", "итальянский", "испанский", "голландский",
-        "норвежский", "шведский", "португальский", "вьетнамский", "тайский",
-        "индонезийский", "малайский", "латина", "бразильский",
-      ];
-      for (var stage = 0; stage < 2; stage++) {
-        try {
-          await initAdapter(c.setup);
-          if (stage === 1) {
-            out(
-              "обычная сессия DID не отдала — пробую в расширенной сессии (10 03)…",
-              "note",
-            );
-            await uds("1003", "5003", { atpc: false, tries: 4 });
-            extended = true;
-            startKeepAlive();
-          }
-          out("чтение DID 0x0110 (22 10 01)…");
-          var data = await uds("221001", "", { atpc: false, tries: 2 });
-          out("ответ: " + sp2(data), "ok");
-          if (data.indexOf("62") === 0 && data.length >= 6) {
-            var payload = data.slice(6);
-            var note =
-              "DID 0x0110: " + payload.length / 2 + " байт" +
-              (payload ? ": " + sp2(payload) : " (пусто)");
-            if (payload.length >= 2) {
-              var lang = parseInt(payload.slice(0, 2), 16);
-              note += " — язык HMI: " +
-                (HMI_LANGS[lang] !== undefined ? HMI_LANGS[lang] : "код " + lang);
-            }
-            out(note, "note");
-          }
-          if (extended) {
-            await uds("1001", "5001", { atpc: false, tries: 2 });
-            extended = false;
-          }
-          return;
-        } catch (e) {
-          stopKeepAlive();
-          extended = false;
-          out(
-            "DID 0x0110 (" + (stage === 0 ? "обычная" : "расширенная") +
-              " сессия): " + e.message,
-            stage === 0 ? "note" : "err",
-          );
-          if (stage === 0) {
-            continue; // вторая попытка — в расширенной сессии
-          }
-          return;
-        }
-      }
-    } catch (e) {
-      out("DID 0x0110: " + e.message, "err");
-    } finally {
-      stopKeepAlive();
-      try {
-        if (extended) {
-          await uds("1001", "", { atpc: false, timeout: 1500 });
-        }
-      } catch (_) {}
-      try {
-        await closeProto();
-      } catch (_) {}
-      setBusy(false);
     }
-  });
+  } catch (e) {
+    out("DID 0x0110: " + e.message, "err");
+  } finally {
+    try {
+      if (extended) {
+        await uds("1001", "", { atpc: false, timeout: 1500 });
+      }
+    } catch (_) {}
+    stopKeepAlive();
+    try {
+      await closeProto();
+    } catch (_) {}
+    setBusy(false);
+  }
 }
 
 /* ---- connect-меню + обвязка ---- */
@@ -2574,7 +2577,11 @@ $("#btnRaw").addEventListener("click", function () {
 });
 $("#btnMenu").addEventListener("click", openMenu);
 $("#btnAdb").addEventListener("click", enableAdb);
-$("#btnDid").addEventListener("click", readDid1001);
+$("#btnDid").addEventListener("click", function () {
+  readDid1001().catch(function (e) {
+    out("22 10 01: " + e.message, "err");
+  });
+});
 
 out("bZ3X — простой режим. Подключите адаптер; шина определится сама и безопасно: сначала пассивное прослушивание (ATMA, в шину ничего не передаётся), VIN читается только на живой 500k-шине.");
 if (!("serial" in navigator)) {
